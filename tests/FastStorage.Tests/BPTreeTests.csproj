@@ -21,7 +21,7 @@
     </ItemGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\FastStorage\FastStorage.csproj" />
+      <ProjectReference Include="..\..\src\FastStorage\FastStorage.csproj" />
     </ItemGroup>
 
 </Project>

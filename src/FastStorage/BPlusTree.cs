@@ -87,6 +87,12 @@ namespace FastStorage
             writer.Write(ref root);
         }
 
+        public SearchResult Search(ulong key)
+        {
+            ref var root = ref GetRoot();
+            return root.Search(key);
+        }
+
         public void Insert(ulong key, ulong value)
         {
             ref var root = ref GetRoot();
@@ -169,12 +175,12 @@ namespace FastStorage
         {
             if (node._size == 0)
                 return NodeSeekResult.NotFound;
-
+            
             var position = node._size >> 1;
             var start = 0;
             var end = (int)node._size;
 
-            while (true)
+            while (start != end)
             {
                 ref var child = ref node.GetNodeRef(position);
                 if (child.Key == key)
@@ -186,7 +192,7 @@ namespace FastStorage
                         return new NodeSeekResult(ref node.RightNode(ref child));
 
                     ref var next = ref node.GetNodeRef(position + 1);
-                    if (next.Key >= key)
+                    if (next.Key > key)
                         return new NodeSeekResult(ref node.RightNode(ref child));
 
                     start = position;
@@ -207,6 +213,8 @@ namespace FastStorage
                     position -= Math.Max(1, (end - start) >> 1);
                 }
             }
+            
+            return NodeSeekResult.NotFound;
         }
 
         [StructLayout(LayoutKind.Explicit)]
@@ -232,7 +240,7 @@ namespace FastStorage
                 return ref *(Leaf*)ptr.ToPointer();
             }
 
-            public ulong GetKey(int pos)
+            private ulong GetKey(int pos)
             {
                 var offset = sizeof(Node) + ElementSize[(int)_flag] * pos;
                 var ptr = _ptr + offset;
@@ -335,7 +343,7 @@ namespace FastStorage
                     rightNode.SetLeftNode(ref middleNode);
                     rightNode._size = (byte)(_size - middle);
                     _size = (byte)middle;
-                    
+
                     Debug.Assert(_size == middle);
 
                     return new InsertResult(middleRef.Key, ref rightNode);
@@ -357,13 +365,13 @@ namespace FastStorage
 
                     Buffer.MemoryCopy(srcPtr, destPtr, sizeToCopy, sizeToCopy);
                     SetRightRef(pos, key, ref value);
-                    
+
                     rightNode.SetLeftNode(ref middleNode);
                     rightNode._size = (byte)(_size - middle);
                     _size = (byte)middle;
 
                     Debug.Assert(_size == middle);
-                    
+
                     return new InsertResult(middleRef.Key, ref middleNode);
                 }
             }
@@ -490,8 +498,10 @@ namespace FastStorage
             {
                 if (count <= 0) return;
 
-                var srcSpan = new ReadOnlySpan<NodeRef>((_ptr + sizeof(Node) + srcOffset * sizeof(NodeRef)).ToPointer(), count);
-                var destSpan = new Span<NodeRef>((dest._ptr + sizeof(Node) + destOffset * sizeof(NodeRef)).ToPointer(), count);
+                var srcSpan = new ReadOnlySpan<NodeRef>((_ptr + sizeof(Node) + srcOffset * sizeof(NodeRef)).ToPointer(),
+                    count);
+                var destSpan = new Span<NodeRef>((dest._ptr + sizeof(Node) + destOffset * sizeof(NodeRef)).ToPointer(),
+                    count);
 
                 for (int i = count - 1; i >= 0; i--)
                 {
@@ -606,8 +616,61 @@ namespace FastStorage
 
                 return sb.ToString();
             }
+
+            public SearchResult Search(ulong key)
+            {
+                var nodeSeekResult = SeekNode(ref this, key);
+                Debug.Assert(nodeSeekResult.IsFound);
+
+                ref var node = ref nodeSeekResult.GetNode();
+
+                while (!node.IsLeaf)
+                {
+                    nodeSeekResult = SeekNode(ref node, key);
+                    Debug.Assert(nodeSeekResult.IsFound);
+                    node = ref nodeSeekResult.GetNode();
+                }
+
+                var start = 0;
+                var end = (int)node._size;
+                var offset = end >> 1;
+                var ptr = (Leaf*)(node._ptr + sizeof(Node)).ToPointer();
+
+                while (start != end)
+                {
+                    var leaf = ptr + offset;
+
+                    if (leaf->Key > key)
+                    {
+                        end = offset;
+                        offset -= Math.Max(1, (end - start) >> 1);
+                    }
+                    else
+                    {
+                        if (leaf->Key == key)
+                            return new SearchResult(leaf->Value, true);
+
+                        start = offset;
+                        offset += Math.Max(1, (end - start) >> 1);
+                    }
+                }
+
+                return new SearchResult(0, false);
+            }
         }
 
+        public readonly struct SearchResult
+        {
+            public readonly bool Found;
+
+            public readonly ulong Value;
+
+            public SearchResult(ulong value, bool found)
+            {
+                Value = value;
+                Found = found;
+            }
+        }
 
         [StructLayout(LayoutKind.Sequential)]
         internal struct Leaf
