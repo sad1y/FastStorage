@@ -1,6 +1,5 @@
-using System;
+using System.Buffers.Binary;
 using System.Diagnostics;
-using System.IO;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -28,6 +27,54 @@ namespace FastStorage
             AllocateNewMemBlock();
             // create root
             UpdateRoot(ref CreateNode(NodeFlag.Leaf));
+        }
+
+        public Task Serialize(Stream stream)
+        {
+            stream.Write(); // version
+            stream.Write(); // capacity
+
+            ref var node = ref GetRoot();
+
+            WriteNode(stream, ref node);
+            
+            static unsafe void WriteNode(Stream stream, ref Node node)
+            {
+                var bufferSize = node._size * sizeof(ulong);
+                Span<byte> buffer = stackalloc byte[bufferSize];
+                stream.Write(node._size);
+                stream.Write(node._flag);
+
+                if (node.IsLeaf)
+                {
+                    var leaves = (Leaf*)(node._ptr + sizeof(Node)).ToPointer();
+                    
+                    for (var i = 0; i < node._size; i++)
+                    {
+                        Unsafe.Write(&buffer[i * sizeof(ulong)], (leaves + i)->Key);
+                    }
+                }
+                else
+                {
+                    var nodeRef = (NodeRef*)(node._ptr + sizeof(Node)).ToPointer();
+
+                    var written = 0;
+                    for (var i = 0; i < node._size; i++)
+                    {
+                        BinaryPrimitives.WriteUInt64BigEndian(buffer, (nodeRef + i)->Key);
+                        written += sizeof(ulong);
+                    }
+
+                    stream.Write(buffer[..written]);
+                    
+                    WriteNode(stream, ref node.LeftNode());
+                    
+                    for (var i = 0; i < node._size; i++)
+                    {
+                        WriteNode(stream, ref node.RightNode(i));
+                    }
+                }
+            }
         }
 
         private void UpdateRoot(ref Node root)
