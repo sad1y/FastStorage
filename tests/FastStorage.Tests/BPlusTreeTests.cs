@@ -5,43 +5,46 @@ using Xunit.Abstractions;
 
 namespace BPTreeTests;
 
-public class UnitTest1
+public class BPlusTreeTests
 {
-    private readonly ITestOutputHelper _testOutputHelper;
-
-    public UnitTest1(ITestOutputHelper testOutputHelper)
-    {
-        _testOutputHelper = testOutputHelper;
-    }
-
+    
     [Fact]
-    public void InsertDuplicate()
+    public void SerializeFromNonEmptyTree_ShouldFeelStream()
     {
-        using var tree = new BPlusTree(nodeCapacity: 3, elementCount: 64);
+        using var tree = new BPlusTree(nodeCapacity: 3, elementCount: 6);
+        tree.Insert(5, 5);
+        tree.Insert(3, 3);
+        tree.Insert(4, 4);
+        tree.Insert(0, 0);
+        tree.Insert(1, 1);
+        tree.Insert(2, 2);
+        
+        using var stream = new MemoryStream();
+        tree.Serialize(stream);
+        stream.Position = 0;
+
+        var restoredTree = BPlusTree.Deserialize(stream);
+        
+        Assert.Equal(6U, restoredTree.Size);
+        Assert.Equal(0U, restoredTree.Search(0).Value);
+        Assert.Equal(1U, restoredTree.Search(1).Value);
+        Assert.Equal(2U, restoredTree.Search(2).Value);
+        Assert.Equal(3U, restoredTree.Search(3).Value);
+        Assert.Equal(4U, restoredTree.Search(4).Value);
+        Assert.Equal(5U, restoredTree.Search(5).Value);
+    }
+    
+    [Fact]
+    public void InsertDuplicateKeys_ShouldReturnFalse()
+    {
+        using var tree = new BPlusTree(nodeCapacity: 3, elementCount: 5);
 
         tree.Insert(1, 1);
 
         Assert.False(tree.Insert(1, 2));
         Assert.False(tree.Insert(1, 3));
-
-
-        Assert.Equal(1U, tree.Size); 
-
-        // tree.Insert(22, 22);
-        // tree.Insert(13, 13);
-        // tree.Insert(18, 18);
-        // tree.Insert(0, 0);
-        // tree.Insert(11, 11);
-
         
-
-
-        // Assert.Equal(1, tree.Search(1));
-        // Assert.Equal(2, tree.Search(2));
-        // Assert.Equal(3, tree.Search(3));
-        // Assert.Equal(4, tree.Search(4));
-        // Assert.Equal(9, tree.Search(9));
-        // Assert.Equal(8, tree.Search(8));
+        Assert.Equal(1U, tree.Size);
     }
 
     [Fact]
@@ -94,9 +97,9 @@ public class UnitTest1
         }
 
         Assert.False(tree.Search(0).Found);
-        
-        File.Delete("/tmp/bptree.dot");
-        using var fs = File.OpenWrite("/tmp/bptree.dot");
-        tree.PrintAsDot(fs);
+        //
+        // File.Delete("/tmp/bptree.dot");
+        // using var fs = File.OpenWrite("/tmp/bptree.dot");
+        // tree.PrintAsDot(fs);
     }
 }

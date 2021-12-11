@@ -21,15 +21,14 @@ public class BPlusTree : IDisposable
     private uint _size;
     private IntPtr _rootPtr;
 
-    public BPlusTree(byte nodeCapacity = 16, uint elementCount = 1024, int allocationBlockSize = 1024 * 1024)
+    public BPlusTree(byte nodeCapacity = 16, uint elementCount = 1024)
     {
         if (nodeCapacity < 3) throw new ArgumentOutOfRangeException(nameof(nodeCapacity));
-        if (allocationBlockSize <= 0) throw new ArgumentOutOfRangeException(nameof(allocationBlockSize));
-
-        _nodeCapacity = nodeCapacity;
-        _allocationBlockSize = allocationBlockSize;
-
+        
         var memoryBlockSize = CalculateMemoryBlockSize(nodeCapacity, elementCount);
+        
+        _nodeCapacity = nodeCapacity;
+        _allocationBlockSize = (int)(memoryBlockSize * 1.75);
 
         AllocateNewMemBlock(memoryBlockSize);
         // create root
@@ -40,7 +39,8 @@ public class BPlusTree : IDisposable
 
     private static unsafe int CalculateMemoryBlockSize(int capacity, uint elementCount)
     {
-        var leaves = elementCount / capacity;
+        const double occupancyRatio = 1.25;
+        var leaves = (int)(elementCount / capacity) * occupancyRatio;
 
         var depth = 0;
         var nodes = 0;
@@ -56,16 +56,15 @@ public class BPlusTree : IDisposable
         }
 
         var parentsNodesSize = nodes * (sizeof(Node) + sizeof(NodeRef) * capacity + 1);
-        var leavesNodesSize = leaves * (sizeof(Node) + sizeof(Leaf) * capacity);
-
-        const double occupancyRatio = 1.25;
-        return (int)((parentsNodesSize + leavesNodesSize) * occupancyRatio);
+        var leavesNodesSize = Math.Pow(capacity + 1, depth) * (sizeof(Node) + sizeof(Leaf) * capacity);
+        
+        return (int)(parentsNodesSize + leavesNodesSize);
     }
 
     [SuppressMessage("Reliability", "CA2014", MessageId = "Do not use stackalloc in loops")]
     public static BPlusTree Deserialize(Stream stream)
     {
-        Span<byte> buffer = stackalloc byte[12];
+        Span<byte> buffer = stackalloc byte[8];
         stream.Read(buffer);
 
         if (buffer[0] != MagicNumber)
@@ -77,15 +76,16 @@ public class BPlusTree : IDisposable
         var capacity = buffer[2];
 
         var size = BinaryPrimitives.ReadUInt32BigEndian(buffer[4..]);
-        var allocationBlockSize = BinaryPrimitives.ReadInt32BigEndian(buffer[8..]);
 
-        var tree = new BPlusTree(capacity, size, allocationBlockSize);
+        var tree = new BPlusTree(capacity, size);
+
+        tree._size = size;
 
         var latestLeaf = IntPtr.Zero;
         ref var root = ref ReadNode(stream, tree, ref latestLeaf);
 
         tree.UpdateRoot(ref root);
-
+        
         static unsafe ref Node ReadNode(Stream stream, BPlusTree tree, ref IntPtr latestLeafPtr)
         {
             ref var node = ref tree.CreateNode(NodeFlag.Container);
@@ -102,10 +102,12 @@ public class BPlusTree : IDisposable
                 if (node.IsLeaf)
                 {
                     Span<byte> buffer = stackalloc byte[sizeof(Leaf)];
-                    var leaves = (Leaf*)node._ptr + sizeof(Node);
+                    var leaves = (Leaf*)(node._ptr + sizeof(Node));
 
                     for (var i = 0; i < node._size; i++)
                     {
+                        stream.Read(buffer);
+                        
                         var key = BinaryPrimitives.ReadUInt32BigEndian(buffer);
                         var value = BinaryPrimitives.ReadUInt32BigEndian(buffer[sizeof(uint)..]);
                         (leaves + i)->Key = key;
@@ -125,9 +127,8 @@ public class BPlusTree : IDisposable
                     ref var leftNode = ref ReadNode(stream, tree, ref latestLeafPtr);
                     node.SetLeftNode(ref leftNode);
 
-                    var nodeRefs = (NodeRef*)node._ptr + sizeof(Node);
-
-
+                    var nodeRefs = (NodeRef*)(node._ptr + sizeof(Node));
+                    
                     for (var i = 0; i < node._size; i++)
                     {
                         var nodeRef = nodeRefs + i;
@@ -153,14 +154,13 @@ public class BPlusTree : IDisposable
     [SuppressMessage("Reliability", "CA2014", MessageId = "Do not use stackalloc in loops")]
     public void Serialize(Stream stream)
     {
-        Span<byte> buffer = stackalloc byte[12];
+        Span<byte> buffer = stackalloc byte[8];
 
         buffer[0] = MagicNumber; // magic
         buffer[1] = Version; // version
         buffer[2] = _nodeCapacity;
 
         BinaryPrimitives.WriteUInt32BigEndian(buffer[4..], _size);
-        BinaryPrimitives.WriteInt32BigEndian(buffer[8..], _allocationBlockSize);
 
         stream.Write(buffer);
 
@@ -209,7 +209,7 @@ public class BPlusTree : IDisposable
                 {
                     {
                         Span<byte> buffer = stackalloc byte[sizeof(uint)];
-                        BinaryPrimitives.WriteUInt64BigEndian(buffer, (refs + i)->Key);
+                        BinaryPrimitives.WriteUInt32BigEndian(buffer, (refs + i)->Key);
                         stream.Write(buffer);
                     }
                     WriteNode(stream, ref node.RightNode(i));
@@ -400,11 +400,11 @@ public class BPlusTree : IDisposable
         Debug.Assert(node._size != 0);
 
         ref var lastNodeRef = ref node.GetNodeRef(node._size - 1);
-        if (lastNodeRef.Key >= key)
+        if (lastNodeRef.Key <= key)
             return new NodeSeekResult(ref node.RightNode(ref lastNodeRef));
 
         ref var firstNodeRef = ref node.GetNodeRef(0);
-        if (firstNodeRef.Key < key)
+        if (firstNodeRef.Key > key)
             return new NodeSeekResult(ref node.LeftNode());
 
         if (firstNodeRef.Key == key)
@@ -467,7 +467,6 @@ public class BPlusTree : IDisposable
             return ref *(Leaf*)ptr.ToPointer();
         }
 
-
         public static ref Node FromPtr(IntPtr ptr) => ref *(Node*)ptr;
 
         private uint GetKey(int pos)
@@ -501,7 +500,6 @@ public class BPlusTree : IDisposable
                     Buffer.MemoryCopy(ptr, ptr + 1, size, size);
                 }
             }
-
             {
                 ref var leaf = ref GetLeaf(pos);
                 leaf.Key = key;
