@@ -12,14 +12,12 @@ public class BPlusTree : IDisposable
     private const int MagicNumber = 250;
     private const int Version = 1;
     private const int EmptyNode = 0;
-
-    private readonly int _allocationBlockSize;
+    
     private readonly byte _nodeCapacity;
-    private readonly MemBlock[] _blocks = new MemBlock [128];
-
-    private int _currentBlock = -1;
+    
     private uint _size;
     private IntPtr _rootPtr;
+    private readonly UnmanagedMemory _memory;
 
     public BPlusTree(byte nodeCapacity = 16, uint elementCount = 1024)
     {
@@ -28,9 +26,9 @@ public class BPlusTree : IDisposable
         var memoryBlockSize = CalculateMemoryBlockSize(nodeCapacity, elementCount);
         
         _nodeCapacity = nodeCapacity;
-        _allocationBlockSize = (int)(memoryBlockSize * 1.75);
+        // _allocationBlockSize = (int)(memoryBlockSize * 1.75);
 
-        AllocateNewMemBlock(memoryBlockSize);
+        _memory = new UnmanagedMemory(memoryBlockSize);
         // create root
         UpdateRoot(ref CreateNode(NodeFlag.Leaf));
     }
@@ -39,7 +37,7 @@ public class BPlusTree : IDisposable
 
     private static unsafe int CalculateMemoryBlockSize(int capacity, uint elementCount)
     {
-        const double occupancyRatio = 1.25;
+        const double occupancyRatio = 1.45;
         var leaves = (int)(elementCount / capacity) * occupancyRatio;
 
         var depth = 0;
@@ -56,7 +54,7 @@ public class BPlusTree : IDisposable
         }
 
         var parentsNodesSize = nodes * (sizeof(Node) + sizeof(NodeRef) * capacity + 1);
-        var leavesNodesSize = Math.Pow(capacity + 1, depth) * (sizeof(Node) + sizeof(Leaf) * capacity);
+        var leavesNodesSize = leaves * (sizeof(Node) + sizeof(Leaf) * capacity);
         
         return (int)(parentsNodesSize + leavesNodesSize);
     }
@@ -223,53 +221,15 @@ public class BPlusTree : IDisposable
         _rootPtr = root._ptr;
     }
 
-    private void AllocateNewMemBlock()
-    {
-        AllocateNewMemBlock(_allocationBlockSize);
-    }
-
-    private void AllocateNewMemBlock(int size)
-    {
-        var ptr = Marshal.AllocHGlobal(size);
-        _blocks[++_currentBlock] = new MemBlock(ptr, size);
-    }
-
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private unsafe int GetNodeSize() => sizeof(Node) + sizeof(Leaf) * _nodeCapacity;
 
-
-    /// <summary>
-    /// return last allocated memory
-    /// </summary>
-    /// <param name="ptr"></param>
-    /// <exception cref="IOException">throws IOException if trying to return non-last allocated memory</exception>
-    private void ReturnMemory(IntPtr ptr)
-    {
-        var size = GetNodeSize();
-        var current = _blocks[_currentBlock].Return(size);
-
-        if (ptr != current)
-            throw new IOException("failed to return memory");
-    }
-
-    private IntPtr AllocateNode()
-    {
-        var size = GetNodeSize();
-        while (true)
-        {
-            if (_blocks[_currentBlock].FreeSpace < size)
-            {
-                AllocateNewMemBlock();
-                continue;
-            }
-
-            return _blocks[_currentBlock].Reserve(size);
-        }
-    }
+    private void DeleteNode(ref Node node) => 
+        _memory.Return(node._ptr, GetNodeSize());
 
     private unsafe ref Node CreateNode(NodeFlag flag)
     {
-        var ptr = AllocateNode();
+        var ptr = _memory.Allocate(GetNodeSize());
 
         ref var node = ref *(Node*)ptr;
 
@@ -297,6 +257,11 @@ public class BPlusTree : IDisposable
     {
         ref var root = ref GetRoot();
         return root.Search(key);
+    }
+    
+    public void Update(uint key, uint value)
+    {
+        
     }
 
     public bool Insert(uint key, uint value)
@@ -352,7 +317,7 @@ public class BPlusTree : IDisposable
                 var result = node.InsertAndRedistribute(key, value, ref newNode);
 
                 if (result.Duplicate)
-                    ReturnMemory(newNode._ptr);
+                    DeleteNode(ref newNode);
 
                 return result;
             }
@@ -386,7 +351,7 @@ public class BPlusTree : IDisposable
                 var distributionResult = node.RedistributeAndInsertRef(insertResult.Key, ref insertResult.GetNode(), ref rightNode);
 
                 if (distributionResult.Duplicate)
-                    ReturnMemory(rightNode._ptr);
+                    DeleteNode(ref rightNode);
 
                 return distributionResult;
             }
@@ -889,6 +854,11 @@ public class BPlusTree : IDisposable
 
             return new SearchResult(0, false);
         }
+
+        public ref Node Next()
+        {
+            return ref FromPtr(_ptr + _sibling);
+        }
     }
 
     public readonly struct SearchResult
@@ -978,51 +948,42 @@ public class BPlusTree : IDisposable
 
         public static NodeSeekResult NotFound = new(IntPtr.Zero);
     }
+    
+    public delegate void IteratorAction(uint key, uint value); 
 
-    private struct MemBlock
+    public void Iterator(IteratorAction action)
     {
-        private int Offset;
-        private readonly int Capacity;
-        public readonly IntPtr Ptr;
-        public int FreeSpace => Capacity - Offset;
+        // find leftmost leaf
+        ref var node = ref GetRoot();
 
-        public bool IsInitialized() => Ptr != IntPtr.Zero && Capacity > 0;
-
-        public MemBlock(IntPtr ptr, int capacity)
+        while (!node.IsLeaf)
         {
-            Offset = 0;
-            Capacity = capacity;
-            Ptr = ptr;
+            node = ref node.LeftNode();
         }
 
-        public IntPtr Reserve(int size)
+        while (true)
         {
-            var ptr = Ptr + Offset;
-            Offset += size;
-            return ptr;
-        }
+            for (var i = 0; i < node._size; i++)
+            {
+                ref var leaf = ref node.GetLeaf(i);
+                action(leaf.Key, leaf.Value);
+            }
 
-        public IntPtr Return(int size)
-        {
-            Offset -= size;
-            return Ptr + Offset;
+            if (node._sibling == 0)
+                break;
+
+            node = ref node.Next();
         }
     }
-
+    
     public void Dispose()
     {
-        Dispose(true);
+        _memory.Dispose();
         GC.SuppressFinalize(this);
     }
 
-    private void Dispose(bool disposing)
+    public override string ToString()
     {
-        for (var i = 0; i < _blocks.Length; i++)
-        {
-            if (_blocks[i].IsInitialized())
-            {
-                Marshal.FreeHGlobal(_blocks[i].Ptr);
-            }
-        }
+        return $"{nameof(Size)}: {Size}, Memory: {_memory}";
     }
 }
