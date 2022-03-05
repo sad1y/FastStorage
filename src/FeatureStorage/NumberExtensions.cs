@@ -1,4 +1,4 @@
-namespace FastStorage;
+namespace FeatureStorage;
 
 public static class NumberExtensions
 {

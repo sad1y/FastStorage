@@ -2,6 +2,7 @@
     <PropertyGroup>
         <TargetFramework>net6.0</TargetFramework>
         <OutputType>Exe</OutputType>
+        <RootNamespace>FeatureStorage.Benchmark</RootNamespace>
     </PropertyGroup>
     <PropertyGroup>
         <PlatformTarget>AnyCPU</PlatformTarget>
@@ -17,6 +18,6 @@
         <PackageReference Include="BenchmarkDotNet.Diagnostics.Windows" Version="0.12.1" Condition="'$(OS)' == 'Windows_NT'" />
     </ItemGroup>
     <ItemGroup>
-      <ProjectReference Include="..\..\src\FastStorage\FastStorage.csproj" />
+      <ProjectReference Include="..\..\src\FeatureStorage\FeatureStorage.csproj" />
     </ItemGroup>
 </Project>

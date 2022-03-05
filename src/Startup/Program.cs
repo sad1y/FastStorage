@@ -1,6 +1,7 @@
 ﻿// See https://aka.ms/new-console-template for more information
 
-using FastStorage;
+
+using FeatureStorage;
 
 using var tree = new BPlusTree(nodeCapacity: 128, elementCount: 50_000_000);
             

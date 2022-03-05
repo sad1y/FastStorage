@@ -4,8 +4,9 @@ using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
+using FeatureStorage.Memory;
 
-namespace FastStorage;
+namespace FeatureStorage;
 
 public class BPlusTree : IDisposable
 {
@@ -17,7 +18,7 @@ public class BPlusTree : IDisposable
     
     private uint _size;
     private IntPtr _rootPtr;
-    private readonly UnmanagedMemory _memory;
+    private readonly ContiguousAllocator _memory;
 
     public BPlusTree(byte nodeCapacity = 16, uint elementCount = 1024)
     {
@@ -28,7 +29,7 @@ public class BPlusTree : IDisposable
         _nodeCapacity = nodeCapacity;
         // _allocationBlockSize = (int)(memoryBlockSize * 1.75);
 
-        _memory = new UnmanagedMemory(memoryBlockSize);
+        _memory = new ContiguousAllocator(memoryBlockSize);
         // create root
         UpdateRoot(ref CreateNode(NodeFlag.Leaf));
     }
@@ -225,7 +226,7 @@ public class BPlusTree : IDisposable
     private unsafe int GetNodeSize() => sizeof(Node) + sizeof(Leaf) * _nodeCapacity;
 
     private void DeleteNode(ref Node node) => 
-        _memory.Return(node._ptr, GetNodeSize());
+        _memory.Return(GetNodeSize());
 
     private unsafe ref Node CreateNode(NodeFlag flag)
     {

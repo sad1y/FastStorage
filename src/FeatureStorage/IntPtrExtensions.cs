@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
-namespace FastStorage;
+namespace FeatureStorage;
 
 public static class IntPtrExtensions
 {

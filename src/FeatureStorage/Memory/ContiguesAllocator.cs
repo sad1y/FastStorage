@@ -1,26 +1,22 @@
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
-namespace FastStorage;
+namespace FeatureStorage.Memory;
 
-public class UnmanagedMemory : IDisposable
+public class ContiguousAllocator : MemoryAllocator, IDisposable
 {
     private int _currentBlock = -1;
     private MemBlock[] _blocks = new MemBlock [128];
-    
+
     private readonly int _blockSize;
 
-    public UnmanagedMemory(int blockSize)
+    public ContiguousAllocator(int blockSize)
     {
         _blockSize = blockSize;
         AllocateNewMemBlock(blockSize);
     }
 
-    /// <summary>
-    /// allocate memory for requested size
-    /// </summary>
-    /// <param name="size"></param>
-    /// <returns></returns>
-    public IntPtr Allocate(int size)
+    public override IntPtr Allocate(int size)
     {
         while (true)
         {
@@ -40,19 +36,36 @@ public class UnmanagedMemory : IDisposable
     }
 
     /// <summary>
-    /// return last allocated memory
+    /// do nothing
     /// </summary>
-    /// <param name="ptr">rented memory ptr</param>
-    /// <param name="size">rented memory size</param>
-    /// <exception cref="IOException">throws IOException if trying to return non-last allocated memory</exception>
-    public void Return(IntPtr ptr, int size)
+    /// <param name="memory"></param>
+    public override void Free(IntPtr memory)
     {
-        var current = _blocks[_currentBlock].Return(size);
-
-        if (ptr != current)
-            throw new IOException("failed to return memory");
     }
-    
+
+    /// <summary>
+    /// mark memory as unused in last allocated memory block
+    /// </summary>
+    /// <param name="size">bytes to return</param>
+    public void Return(int size)
+    {
+        _blocks[_currentBlock].Return(size);
+    }
+
+    /// <summary>
+    /// reset memory blocks usage
+    /// </summary>
+    public void Reset()
+    {
+        for (var i = 0; i < _blocks.Length; i++)
+        {
+            _blocks[i].Reset();
+        }
+    }
+
+    public IntPtr Start => _blocks[0].Ptr;
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void AllocateNewMemBlock(int size)
     {
         var ptr = Marshal.AllocHGlobal(size);
@@ -67,6 +80,11 @@ public class UnmanagedMemory : IDisposable
         public int FreeSpace => _capacity - _offset;
         public int Size => _offset;
         public int Capacity => _capacity;
+
+        public void Reset()
+        {
+            _offset = 0;
+        }
 
         public bool IsInitialized() => Ptr != IntPtr.Zero && _capacity > 0;
 
@@ -90,14 +108,17 @@ public class UnmanagedMemory : IDisposable
             return Ptr + _offset;
         }
     }
-    
+
     public void Dispose()
     {
         Dispose(true);
         GC.SuppressFinalize(this);
     }
-    private void Dispose(bool disposing)
+
+    protected virtual void Dispose(bool disposing)
     {
+        if (!disposing) return;
+
         for (var i = 0; i < _blocks.Length; i++)
         {
             if (_blocks[i].IsInitialized())
@@ -118,7 +139,7 @@ public class UnmanagedMemory : IDisposable
 
         return sum;
     }
-    
+
     public long GetMemoryUsage()
     {
         var sum = 0;

@@ -1,10 +1,8 @@
 using System;
 using System.IO;
-using FastStorage;
 using Xunit;
-using Xunit.Abstractions;
 
-namespace BPTreeTests;
+namespace FeatureStorage.Tests;
 
 public class BPlusTreeTests
 {

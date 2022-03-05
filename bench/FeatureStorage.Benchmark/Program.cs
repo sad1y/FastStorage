@@ -1,6 +1,6 @@
 using BenchmarkDotNet.Running;
 
-namespace FastStorage.Benchmark
+namespace FeatureStorage.Benchmark
 {
     public class Program
     {
