@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 
 namespace FeatureStorage.Memory;
 
-public class RecycleRegionAllocator : MemoryAllocator, IDisposable
+public sealed class RecycleRegionAllocator : MemoryAllocator, IDisposable
 {
     private const uint MinRegionCapacity = 1024;
 
@@ -67,7 +67,7 @@ public class RecycleRegionAllocator : MemoryAllocator, IDisposable
 
     private struct Region
     {
-        public IntPtr Ptr;
+        public readonly IntPtr Ptr;
         public int Offset;
         private int _allocatedObjectCount;
 
@@ -82,8 +82,8 @@ public class RecycleRegionAllocator : MemoryAllocator, IDisposable
         {
             size += sizeof(Header);
 
-            Unsafe.Write((Ptr + (int)Offset).ToPointer(), Header.InUse);
-            var ptr = Ptr + (int)Offset + sizeof(Header);
+            Unsafe.Write((Ptr + Offset).ToPointer(), Header.InUse);
+            var ptr = Ptr + Offset + sizeof(Header);
             Offset += size;
             _allocatedObjectCount++;
 
@@ -106,7 +106,7 @@ public class RecycleRegionAllocator : MemoryAllocator, IDisposable
         }
     }
 
-    protected virtual void Dispose(bool disposing)
+    private void Dispose(bool disposing)
     {
         if (disposing) return;
 

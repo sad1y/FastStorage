@@ -8,7 +8,7 @@ namespace FeatureStorage.Tests;
 public class ZfpCodecTests
 {
     [Fact]
-    public unsafe void EncodeDecode_Should()
+    public unsafe void Decode_ShouldReturnEncodedData()
     {
         using var allocator = new RecycleRegionAllocator(4096);
         var codec = new ZfpCodec<long>(allocator, 1e-5);
@@ -33,7 +33,7 @@ public class ZfpCodecTests
 
         Assert.Equal(featureBlock.Count, decodedBlock.Count);
         Assert.Equal(featureBlock.FeatureCount, decodedBlock.FeatureCount);
-        Assert.Equal(featureBlock.GetMeta().ToArray(), decodedBlock.GetMeta().ToArray());
+        Assert.Equal(featureBlock.GetTag().ToArray(), decodedBlock.GetTag().ToArray());
 
         var originalSpan = featureBlock.GetFeatureMatrix();
         var decodedSpan = decodedBlock.GetFeatureMatrix();

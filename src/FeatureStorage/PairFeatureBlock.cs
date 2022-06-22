@@ -17,7 +17,7 @@ public readonly unsafe struct PairFeatureBlock<T> where T : unmanaged
         _featureCount = featureCount;
     }
 
-    public ReadOnlySpan<T> GetMeta()
+    public ReadOnlySpan<T> GetTag()
     {
         return new ReadOnlySpan<T>(_ptr.ToPointer(), _count);
     }

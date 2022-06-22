@@ -1,6 +1,6 @@
-namespace FeatureStorage;
+namespace FeatureStorage.Extensions;
 
-public static class NumberExtensions
+internal static class NumberExtensions
 {
     public static double InMegabytes(this long num )
     {

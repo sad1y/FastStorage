@@ -4,6 +4,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
+using FeatureStorage.Extensions;
 using FeatureStorage.Memory;
 
 namespace FeatureStorage;

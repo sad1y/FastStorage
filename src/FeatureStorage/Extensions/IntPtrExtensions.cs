@@ -1,9 +1,9 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
-namespace FeatureStorage;
+namespace FeatureStorage.Extensions;
 
-public static class IntPtrExtensions
+internal static class IntPtrExtensions
 {
     public static int GetOffset(this IntPtr left, IntPtr right)
     {
@@ -18,5 +18,11 @@ public static class IntPtrExtensions
     public static long GetLongOffset(this IntPtr left, IntPtr right)
     {
         return right.ToInt64() - left.ToInt64();
+    }
+    
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static IntPtr MoveBy(this IntPtr ptr, long offset)
+    {
+        return  new IntPtr(ptr.ToInt64() + offset);
     }
 }

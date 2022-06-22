@@ -33,12 +33,12 @@ public unsafe struct PairFeatureBlockBuilder<T> where T : unmanaged
         _count = 0;
     }
 
-    public void AddFeatures(T meta, ReadOnlySpan<float> values)
+    public void AddFeatures(T tag, ReadOnlySpan<float> values)
     {
         if (_capacity == _count)
             throw new IOException("capacity exceeded");
 
-        Unsafe.Write((_ptr + _count * sizeof(T)).ToPointer(), meta);
+        Unsafe.Write((_ptr + _count * sizeof(T)).ToPointer(), tag);
 
         var offset = _count * _featureCount * sizeof(float) + sizeof(T) * _capacity;
 
