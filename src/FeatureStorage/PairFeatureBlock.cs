@@ -9,7 +9,7 @@ public readonly unsafe struct PairFeatureBlock<T> where T : unmanaged
     private readonly int _count;
     private readonly int _featureCount;
 
-    internal PairFeatureBlock(MemoryAllocator allocator, IntPtr ptr, int count, int featureCount)
+    public PairFeatureBlock(MemoryAllocator allocator, IntPtr ptr, int count, int featureCount)
     {
         _allocator = allocator;
         _ptr = ptr;
