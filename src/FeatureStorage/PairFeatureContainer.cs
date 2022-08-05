@@ -19,7 +19,7 @@ public class PairFeatureContainer<TCodec, TIndex, TKey, TTag>
     private readonly TIndex _keyIndex;
     private readonly TCodec _codec;
 
-    public delegate void CreateBlock(ref PairFeatureBlockBuilder<TTag> builder);
+    public delegate void CreateBlock<in T>(ref PairFeatureBlockBuilder<TTag> builder, T state);
 
     public PairFeatureContainer(TCodec codec, TIndex index, int featureCount, int blockSize = 16 * 1024 * 1024)
     {
@@ -29,10 +29,10 @@ public class PairFeatureContainer<TCodec, TIndex, TKey, TTag>
         _keyIndex = index;
     }
 
-    public void AddOrUpdate(TKey key, int capacity, CreateBlock blockCreator)
+    public void AddOrUpdate<TState>(TKey key, int capacity, CreateBlock<TState> blockCreator, TState state)
     {
         var blockBuilder = new PairFeatureBlockBuilder<TTag>(_tempAllocator, _featureCount, capacity);
-        blockCreator(ref blockBuilder);
+        blockCreator(ref blockBuilder, state);
         var block = blockBuilder.ToBlock();
 
         try
@@ -75,24 +75,19 @@ public class PairFeatureContainer<TCodec, TIndex, TKey, TTag>
         featureBlock = new PairFeatureBlock<TTag>();
         return false;
     }
-    
-    private const byte Version = 1;
-    private const long Magic = 40267698293;
 
-    private static void InitStopBuffer(Span<byte> buffer)
-    {
-        for (var i = 0; i < buffer.Length; i++) buffer[i] = 0xff;
-    }
+    private const long Magic = 40267698293;
 
     private delegate void WriteKey(Span<byte> buffer, TKey val);
 
     public unsafe void Serialize(Stream stream)
     {
-        Span<byte> meta = stackalloc byte[sizeof(long) + 1];
+        Span<byte> meta = stackalloc byte[sizeof(int) + sizeof(int) + sizeof(long)];
 
         // write magic and version here
         BinaryPrimitives.WriteInt64LittleEndian(meta, Magic);
-        meta[8] = Version;
+        BinaryPrimitives.WriteInt32LittleEndian(meta[8..], _codec.Stamp);
+        BinaryPrimitives.WriteInt32LittleEndian(meta[12..], _keyIndex.Count);
         stream.Write(meta);
 
         var crc = Crc32.Append(meta);
@@ -121,10 +116,6 @@ public class PairFeatureContainer<TCodec, TIndex, TKey, TTag>
             crc = Crc32.Append(data, crc);
         }
 
-        Span<byte> stop = stackalloc byte[sizeof(TKey) + sizeof(int)];
-        InitStopBuffer(stop);
-        stream.Write(stop);
-
         Span<byte> crc32Buffer = stackalloc byte[sizeof(uint)];
         BinaryPrimitives.WriteUInt32LittleEndian(crc32Buffer, crc);
         stream.Write(crc32Buffer);
@@ -134,7 +125,7 @@ public class PairFeatureContainer<TCodec, TIndex, TKey, TTag>
 
     public unsafe void Deserialize(Stream stream)
     {
-        Span<byte> meta = stackalloc byte[sizeof(long) + 1];
+        Span<byte> meta = stackalloc byte[sizeof(int) + sizeof(int) + sizeof(long)];
 
         // check magic and version
         if (stream.Read(meta) != meta.Length)
@@ -143,8 +134,10 @@ public class PairFeatureContainer<TCodec, TIndex, TKey, TTag>
         if (Magic != BinaryPrimitives.ReadInt64LittleEndian(meta))
             throw new IOException("header is invalid");
 
-        if (meta[8] != Version)
-            throw new IOException("version is invalid");
+        if (BinaryPrimitives.ReadInt32LittleEndian(meta[8..]) != _codec.Stamp)
+            throw new IOException("codec settings are different from what they were when data was serialized, it may leads to data corruption");
+
+        var count = BinaryPrimitives.ReadInt32LittleEndian(meta[12..]);
 
         var crc = Crc32.Append(meta);
 
@@ -174,18 +167,12 @@ public class PairFeatureContainer<TCodec, TIndex, TKey, TTag>
         };
 
         Span<byte> keyAndSize = stackalloc byte[sizeof(TKey) + sizeof(int)];
-        Span<byte> stop = stackalloc byte[sizeof(TKey) + sizeof(int)];
 
-        InitStopBuffer(stop);
-
-        while (true)
+        for (var i = 0; count > i; i++)
         {
             var read = stream.Read(keyAndSize);
             if (read != keyAndSize.Length)
                 throw new IOException("cannot read record");
-
-            if (keyAndSize.SequenceEqual(stop))
-                break;
 
             crc = Crc32.Append(keyAndSize, crc);
 
