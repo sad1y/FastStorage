@@ -7,10 +7,12 @@
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
         <RootNamespace>FeatureStorage</RootNamespace>
         <TargetFramework>netstandard2.1</TargetFramework>
+        <Authors>zoth</Authors>
+        <Company>home-brew</Company>
+        <Version>0.0.2</Version>
     </PropertyGroup>
 
     <ItemGroup>
-      <PackageReference Include="System.IO.Pipelines" Version="6.0.0" />
+      <PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="6.0.0" />
     </ItemGroup>
-
 </Project>

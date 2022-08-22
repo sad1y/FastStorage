@@ -6,10 +6,10 @@ using FeatureStorage.Memory;
 
 namespace FeatureStorage;
 
-public class PairFeatureContainer<TCodec, TIndex, TKey, TTag>
+public class PairFeatureContainer<TCodec, TIndex, TKey, TId>
     where TKey : unmanaged
-    where TTag : unmanaged
-    where TCodec : IPairFeatureCodec<TTag>
+    where TId : unmanaged
+    where TCodec : IPairFeatureCodec<TId>
     where TIndex : IIndex<TKey>
 {
     private readonly ContiguousAllocator _allocator;
@@ -19,7 +19,7 @@ public class PairFeatureContainer<TCodec, TIndex, TKey, TTag>
     private readonly TIndex _keyIndex;
     private readonly TCodec _codec;
 
-    public delegate void CreateBlock<in T>(ref PairFeatureBlockBuilder<TTag> builder, T state);
+    public delegate void CreateBlock<in T>(ref PairFeatureBlockBuilder<TId> builder, T state);
 
     public PairFeatureContainer(TCodec codec, TIndex index, int featureCount, int blockSize = 16 * 1024 * 1024)
     {
@@ -31,36 +31,36 @@ public class PairFeatureContainer<TCodec, TIndex, TKey, TTag>
 
     public void AddOrUpdate<TState>(TKey key, int capacity, CreateBlock<TState> blockCreator, TState state)
     {
-        var blockBuilder = new PairFeatureBlockBuilder<TTag>(_tempAllocator, _featureCount, capacity);
+        var blockBuilder = new PairFeatureBlockBuilder<TId>(_tempAllocator, _featureCount, capacity);
         blockCreator(ref blockBuilder, state);
         var block = blockBuilder.ToBlock();
 
         try
         {
             // calc how many at most bytes needed
-            var encoderBufferSize = blockBuilder.GetAllocatedSize() + _codec.MetaSize;
-            var ptr = _allocator.Allocate(encoderBufferSize);
+            var atMostBytesRequired = block.GetAllocatedSize() + _codec.MetaSize;
+            var ptr = _allocator.Allocate(atMostBytesRequired);
             unsafe
             {
-                var buffer = new Span<byte>(ptr.ToPointer(), encoderBufferSize);
-                if (!_codec.TryEncode(ref block, _featureCount, buffer[sizeof(int)..], out var written))
+                var buffer = new Span<byte>(ptr.ToPointer(), atMostBytesRequired);
+                if (!_codec.TryEncode(ref block, buffer[sizeof(int)..], out var written))
                     throw new IOException("cannot encode block");
 
                 Unsafe.Write(ptr.ToPointer(), written);
                 _keyIndex.Update(key, _allocator.Start.GetLongOffset(ptr));
 
-                Debug.Assert(encoderBufferSize >= written + sizeof(int), "allocated buffer too small");
+                Debug.Assert(atMostBytesRequired >= written + sizeof(int), "allocated buffer too small");
                 // return unused memory 
-                _allocator.Return(encoderBufferSize - (written + sizeof(int)));
+                _allocator.Return(atMostBytesRequired - (written + sizeof(int)));
             }
         }
         finally
         {
-            blockBuilder.Release();
+            block.Release();
         }
     }
 
-    public bool TryGet(TKey key, out PairFeatureBlock<TTag> featureBlock)
+    public bool TryGet(TKey key, out PairFeatureBlock<TId> featureBlock)
     {
         if (_keyIndex.TryGetValue(key, out var offset))
         {
@@ -68,11 +68,12 @@ public class PairFeatureContainer<TCodec, TIndex, TKey, TTag>
             unsafe
             {
                 var size = Unsafe.Read<int>(ptr.ToPointer());
-                return _codec.TryDecode(new Span<byte>((ptr + sizeof(int)).ToPointer(), size), _featureCount, out featureBlock, out _);
+                featureBlock = new PairFeatureBlock<TId>(_tempAllocator, size, _featureCount);
+                return _codec.TryDecode(new Span<byte>((ptr + sizeof(int)).ToPointer(), size), ref featureBlock, out _);
             }
         }
 
-        featureBlock = new PairFeatureBlock<TTag>();
+        featureBlock = new PairFeatureBlock<TId>();
         return false;
     }
 

@@ -87,7 +87,7 @@ public class ContiguousAllocator : MemoryAllocator, IDisposable
             _offset = 0;
         }
 
-        public bool IsInitialized() => Ptr != IntPtr.Zero && _capacity > 0;
+        public bool IsInitialized() => Ptr != IntPtr.Zero && _offset > 0;
 
         public MemBlock(IntPtr ptr, int capacity)
         {

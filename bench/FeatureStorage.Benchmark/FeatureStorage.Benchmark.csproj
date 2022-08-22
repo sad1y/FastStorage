@@ -3,6 +3,7 @@
         <TargetFramework>net6.0</TargetFramework>
         <OutputType>Exe</OutputType>
         <RootNamespace>FeatureStorage.Benchmark</RootNamespace>
+        <IsPackable>false</IsPackable>
     </PropertyGroup>
     <PropertyGroup>
         <PlatformTarget>AnyCPU</PlatformTarget>
