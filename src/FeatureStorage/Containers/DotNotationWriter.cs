@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace FeatureStorage;
+namespace FeatureStorage.Containers;
 
 internal class DotNotationWriter : IDisposable
 {

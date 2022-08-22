@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using FeatureStorage.Containers;
 using Xunit;
 
 namespace FeatureStorage.Tests;

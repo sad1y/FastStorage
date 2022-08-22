@@ -7,7 +7,7 @@ using System.Text;
 using FeatureStorage.Extensions;
 using FeatureStorage.Memory;
 
-namespace FeatureStorage;
+namespace FeatureStorage.Containers;
 
 public class BPlusTree : IDisposable
 {
