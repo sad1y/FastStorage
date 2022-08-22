@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using BenchmarkDotNet.Attributes;
+using FeatureStorage.Containers;
 
 namespace FeatureStorage.Benchmark;
 

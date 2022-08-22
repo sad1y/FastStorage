@@ -3,19 +3,21 @@
         <TargetFramework>net6.0</TargetFramework>
         <OutputType>Exe</OutputType>
         <RootNamespace>FeatureStorage.Benchmark</RootNamespace>
+        <IsPackable>false</IsPackable>
     </PropertyGroup>
     <PropertyGroup>
         <PlatformTarget>AnyCPU</PlatformTarget>
         <DebugType>pdbonly</DebugType>
         <DebugSymbols>true</DebugSymbols>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-        <Optimize>true</Optimize>
-        <Configuration>Release</Configuration>
-        <IsPackable>false</IsPackable>
+<!--        <Optimize>true</Optimize>-->
+<!--        <Configuration>Release</Configuration>-->
+<!--        <IsPackable>false</IsPackable>-->
     </PropertyGroup>
     <ItemGroup>
-        <PackageReference Include="BenchmarkDotNet" Version="0.13.1" />
-        <PackageReference Include="BenchmarkDotNet.Diagnostics.Windows" Version="0.12.1" Condition="'$(OS)' == 'Windows_NT'" />
+        <PackageReference Include="BenchmarkDotNet" Version="0.13.0" />
+<!--        <PackageReference Include="BenchmarkDotNet.Core" Version="0.10.14" />-->
+        <PackageReference Include="BenchmarkDotNet.Diagnostics.Windows" Version="0.13.0" Condition="'$(OS)' == 'Windows_NT'" />
     </ItemGroup>
     <ItemGroup>
       <ProjectReference Include="..\..\src\FeatureStorage\FeatureStorage.csproj" />

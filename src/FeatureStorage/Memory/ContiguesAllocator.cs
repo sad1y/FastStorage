@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using FeatureStorage.Extensions;
 
 namespace FeatureStorage.Memory;
 
@@ -86,7 +87,7 @@ public class ContiguousAllocator : MemoryAllocator, IDisposable
             _offset = 0;
         }
 
-        public bool IsInitialized() => Ptr != IntPtr.Zero && _capacity > 0;
+        public bool IsInitialized() => Ptr != IntPtr.Zero && _offset > 0;
 
         public MemBlock(IntPtr ptr, int capacity)
         {
@@ -155,7 +156,7 @@ public class ContiguousAllocator : MemoryAllocator, IDisposable
     public override string ToString()
     {
         return @$"Blocks: {_currentBlock + 1}, 
-                Allocated: {GetAllocatedMemory().InMegabytes().ToString("F")}mb, 
-                Used: {GetMemoryUsage().InMegabytes().ToString("F")}mb";
+                Allocated: {GetAllocatedMemory().InMegabytes():F}mb, 
+                Used: {GetMemoryUsage().InMegabytes():F}mb";
     }
 }

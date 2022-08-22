@@ -1,9 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
 using BenchmarkDotNet.Attributes;
-using FeatureStorage;
+using FeatureStorage.Containers;
 
-namespace FeatureVault.Benchmark
+namespace FeatureStorage.Benchmark
 {
     [MemoryDiagnoser]
     public class InsertTreeVsDictionary

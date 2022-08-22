@@ -4,9 +4,10 @@ using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
+using FeatureStorage.Extensions;
 using FeatureStorage.Memory;
 
-namespace FeatureStorage;
+namespace FeatureStorage.Containers;
 
 public class BPlusTree : IDisposable
 {
@@ -74,7 +75,7 @@ public class BPlusTree : IDisposable
 
         var capacity = buffer[2];
 
-        var size = BinaryPrimitives.ReadUInt32BigEndian(buffer[4..]);
+        var size = BinaryPrimitives.ReadUInt32LittleEndian(buffer[4..]);
 
         var tree = new BPlusTree(capacity, size);
 
@@ -107,8 +108,8 @@ public class BPlusTree : IDisposable
                     {
                         stream.Read(buffer);
                         
-                        var key = BinaryPrimitives.ReadUInt32BigEndian(buffer);
-                        var value = BinaryPrimitives.ReadUInt32BigEndian(buffer[sizeof(uint)..]);
+                        var key = BinaryPrimitives.ReadUInt32LittleEndian(buffer);
+                        var value = BinaryPrimitives.ReadUInt32LittleEndian(buffer[sizeof(uint)..]);
                         (leaves + i)->Key = key;
                         (leaves + i)->Value = value;
                     }
@@ -134,7 +135,7 @@ public class BPlusTree : IDisposable
                         {
                             Span<byte> buffer = stackalloc byte[sizeof(uint)];
                             stream.Read(buffer);
-                            var key = BinaryPrimitives.ReadUInt32BigEndian(buffer);
+                            var key = BinaryPrimitives.ReadUInt32LittleEndian(buffer);
                             nodeRef->Key = key;
                         }
 
@@ -159,7 +160,7 @@ public class BPlusTree : IDisposable
         buffer[1] = Version; // version
         buffer[2] = _nodeCapacity;
 
-        BinaryPrimitives.WriteUInt32BigEndian(buffer[4..], _size);
+        BinaryPrimitives.WriteUInt32LittleEndian(buffer[4..], _size);
 
         stream.Write(buffer);
 
@@ -189,9 +190,9 @@ public class BPlusTree : IDisposable
                 var written = 0;
                 for (var i = 0; i < node._size; i++)
                 {
-                    BinaryPrimitives.WriteUInt32BigEndian(buffer[written..], (leaves + i)->Key);
+                    BinaryPrimitives.WriteUInt32LittleEndian(buffer[written..], (leaves + i)->Key);
                     written += sizeof(uint);
-                    BinaryPrimitives.WriteUInt32BigEndian(buffer[written..], (leaves + i)->Value);
+                    BinaryPrimitives.WriteUInt32LittleEndian(buffer[written..], (leaves + i)->Value);
                     written += sizeof(uint);
                 }
 
@@ -208,7 +209,7 @@ public class BPlusTree : IDisposable
                 {
                     {
                         Span<byte> buffer = stackalloc byte[sizeof(uint)];
-                        BinaryPrimitives.WriteUInt32BigEndian(buffer, (refs + i)->Key);
+                        BinaryPrimitives.WriteUInt32LittleEndian(buffer, (refs + i)->Key);
                         stream.Write(buffer);
                     }
                     WriteNode(stream, ref node.RightNode(i));
