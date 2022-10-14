@@ -6,7 +6,7 @@ using FeatureStorage.Memory;
 
 namespace FeatureStorage;
 
-public class PairFeatureContainer<TCodec, TIndex, TKey, TId>
+public class PairFeatureContainer<TCodec, TIndex, TKey, TId> : IDisposable
     where TKey : unmanaged
     where TId : unmanaged
     where TCodec : IPairFeatureCodec<TId>
@@ -77,7 +77,7 @@ public class PairFeatureContainer<TCodec, TIndex, TKey, TId>
         return false;
     }
 
-    private const long Magic = 40267698293;
+    private const long Magic = 0xDEADF00D;
 
     private delegate void WriteKey(Span<byte> buffer, TKey val);
 
@@ -205,5 +205,11 @@ public class PairFeatureContainer<TCodec, TIndex, TKey, TId>
         // check that was last data in stream
         if (stream.Read(crc32Buffer) != 0)
             throw new IOException("data malformed");
+    }
+
+    public void Dispose()
+    {
+        _allocator.Dispose();
+        _tempAllocator.Dispose();
     }
 }
