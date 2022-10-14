@@ -29,6 +29,8 @@ public class PairFeatureContainer<TCodec, TIndex, TKey, TId> : IDisposable
         _keyIndex = index;
     }
 
+    private const int HeaderSize = sizeof(int) * 2; // header gonna contains size int bytes that occupied by block plus count of entries  
+
     public void AddOrUpdate<TState>(TKey key, int capacity, CreateBlock<TState> blockCreator, TState state)
     {
         var blockBuilder = new PairFeatureBlockBuilder<TId>(_tempAllocator, _featureCount, capacity);
@@ -43,10 +45,12 @@ public class PairFeatureContainer<TCodec, TIndex, TKey, TId> : IDisposable
             unsafe
             {
                 var buffer = new Span<byte>(ptr.ToPointer(), atMostBytesRequired);
-                if (!_codec.TryEncode(ref block, buffer[sizeof(int)..], out var written))
+
+                if (!_codec.TryEncode(ref block, buffer[HeaderSize..], out var written))
                     throw new IOException("cannot encode block");
 
                 Unsafe.Write(ptr.ToPointer(), written);
+                Unsafe.Write((ptr + 1).ToPointer(), block.Count);
                 _keyIndex.Update(key, _allocator.Start.GetLongOffset(ptr));
 
                 Debug.Assert(atMostBytesRequired >= written + sizeof(int), "allocated buffer too small");
@@ -68,7 +72,8 @@ public class PairFeatureContainer<TCodec, TIndex, TKey, TId> : IDisposable
             unsafe
             {
                 var size = Unsafe.Read<int>(ptr.ToPointer());
-                featureBlock = new PairFeatureBlock<TId>(_tempAllocator, size, _featureCount);
+                var count = Unsafe.Read<int>((ptr + 1).ToPointer());
+                featureBlock = new PairFeatureBlock<TId>(_tempAllocator, count, _featureCount);
                 return _codec.TryDecode(new Span<byte>((ptr + sizeof(int)).ToPointer(), size), ref featureBlock, out _);
             }
         }
@@ -136,7 +141,8 @@ public class PairFeatureContainer<TCodec, TIndex, TKey, TId> : IDisposable
             throw new IOException("header is invalid");
 
         if (BinaryPrimitives.ReadInt32LittleEndian(meta[8..]) != _codec.Stamp)
-            throw new IOException("codec settings are different from what they were when data was serialized, it may leads to data corruption");
+            throw new IOException(
+                "codec settings are different from what they were when data was serialized, it may leads to data corruption");
 
         var count = BinaryPrimitives.ReadInt32LittleEndian(meta[12..]);
 

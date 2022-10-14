@@ -10,28 +10,28 @@ public class PairFeatureAggregatorTests
     public void Add_ShouldConnectDataByKey()
     {
         const int featureSize = 64;
-        const int tagSize = 4;
-        var aggregator = new PairFeatureAggregator<string>(10, tagSize, featureSize);
+        const int idSize = 4;
+        var aggregator = new PairFeatureAggregator<string>(10, idSize, featureSize);
 
         var features = new byte[7][];
-        var tags = new byte[7][];
+        var ids = new byte[7][];
         var rng = new Random();
 
         for (var i = 0; features.Length > i; i++)
         {
-            tags[i] = new byte[tagSize];
+            ids[i] = new byte[idSize];
             features[i] = new byte[featureSize];
             rng.NextBytes(features[i]);
-            rng.NextBytes(tags[i]);
+            rng.NextBytes(ids[i]);
         }
 
-        aggregator.Add("window", tags[0], features[0]);
-        aggregator.Add("summer", tags[1], features[1]);
-        aggregator.Add("window", tags[2], features[2]);
-        aggregator.Add("street", tags[3], features[3]);
-        aggregator.Add("window", tags[4], features[4]);
-        aggregator.Add("street", tags[5], features[5]);
-        aggregator.Add("window", tags[6], features[6]);
+        aggregator.Add("window", ids[0], features[0]);
+        aggregator.Add("summer", ids[1], features[1]);
+        aggregator.Add("window", ids[2], features[2]);
+        aggregator.Add("street", ids[3], features[3]);
+        aggregator.Add("window", ids[4], features[4]);
+        aggregator.Add("street", ids[5], features[5]);
+        aggregator.Add("window", ids[6], features[6]);
 
         void CheckData(ref PairFeatureAggregator<string>.Iterator iterator, int[] expectedIndices)
         {
@@ -39,11 +39,11 @@ public class PairFeatureAggregatorTests
             while (iterator.MoveNext())
             {
                 var index = expectedIndices[processed];
-                var tag = tags[index];
+                var id = ids[index];
                 var feature = features[index];
 
                 var entry = iterator.GetCurrent();
-                entry.Tag.ToArray().Should().BeEquivalentTo(tag);
+                entry.Id.ToArray().Should().BeEquivalentTo(id);
                 entry.Features.ToArray().Should().BeEquivalentTo(feature);
                 processed++;
             }

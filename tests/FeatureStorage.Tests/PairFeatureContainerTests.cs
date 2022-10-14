@@ -23,7 +23,7 @@ public class PairFeatureContainerTests
         }, null);
 
         storage.TryGet(30, out var block).Should().BeTrue();
-        block.Size.Should().Be(3);
+        block.Count.Should().Be(3);
         block.GetIds().ToArray().Should().BeEquivalentTo(new long[] { 10, 20, 30 });
         block.GetFeatureMatrix().ToArray().Should().BeEquivalentTo(new float[] { 1, 2, 3, 4, 5, 2, 4, 6, 8, 10, 3, 6, 9, 12, 15 });
     }
@@ -54,7 +54,7 @@ public class PairFeatureContainerTests
         recoveredStorage.Deserialize(mem);
         
         recoveredStorage.TryGet(30, out var block).Should().BeTrue();
-        block.Size.Should().Be(3);
+        block.Count.Should().Be(3);
         block.GetIds().ToArray().Should().BeEquivalentTo(new long[] { 10, 20, 30 });
         block.GetFeatureMatrix().ToArray().Should().BeEquivalentTo(new float[] { 1, 2, 3, 4, 5, 2, 4, 6, 8, 10, 3, 6, 9, 12, 15 });
     }
@@ -80,15 +80,14 @@ public class PairFeatureContainerTests
     {
         public unsafe bool TryEncode(ref PairFeatureBlock<long> pairFeatureBlock, Span<byte> dest, out int written)
         {
-            BinaryPrimitives.WriteInt32LittleEndian(dest, pairFeatureBlock.Size);
-            var offset = sizeof(int);
+            var offset = 0;
             fixed (void* destPtr = dest)
             fixed (void* keysPtr = pairFeatureBlock.GetIds())
             fixed (void* featurePtr = pairFeatureBlock.GetFeatureMatrix())
             {
-                var tagSize = pairFeatureBlock.Size * sizeof(long);
-                Buffer.MemoryCopy(keysPtr, (new IntPtr(destPtr) + offset).ToPointer(), dest.Length, tagSize);
-                offset += tagSize;
+                var idSize = pairFeatureBlock.Count * sizeof(long);
+                Buffer.MemoryCopy(keysPtr, (new IntPtr(destPtr) + offset).ToPointer(), dest.Length, idSize);
+                offset += idSize;
 
                 var featureSize = pairFeatureBlock.GetFeatureMatrix().Length * sizeof(float);
                 Buffer.MemoryCopy(featurePtr, (new IntPtr(destPtr) + offset).ToPointer(), dest.Length, featureSize);
@@ -103,8 +102,8 @@ public class PairFeatureContainerTests
 
         public bool TryDecode(ReadOnlySpan<byte> src, ref PairFeatureBlock<long> pairFeatureBlock, out int read)
         {
-            var size = BinaryPrimitives.ReadInt32LittleEndian(src);
             const int offset = sizeof(int);
+            var size = pairFeatureBlock.Count;
             var structSize = size * sizeof(long) + sizeof(float) * pairFeatureBlock.FeatureCount * size;
             unsafe
             {

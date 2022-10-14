@@ -10,6 +10,7 @@
         <Authors>zoth</Authors>
         <Company>home-brew</Company>
         <Version>0.0.2</Version>
+        <PackageVersion>0.0.3</PackageVersion>
     </PropertyGroup>
 
     <ItemGroup>

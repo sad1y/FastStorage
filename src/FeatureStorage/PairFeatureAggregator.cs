@@ -6,61 +6,61 @@ namespace FeatureStorage;
 
 public class PairFeatureAggregator<T> : IDisposable where T : notnull
 {
-    private readonly int _tagSize;
+    private readonly int _idSize;
     private readonly int _featureSize;
     private readonly Dictionary<T, long> _index;
     private readonly ContiguousAllocator _memory;
 
     private const int MaxBlockSize = 256 * 1024 * 1024;
 
-    public PairFeatureAggregator(int capacity, int tagSize, int featureSize)
+    public PairFeatureAggregator(int capacity, int idSize, int featureSize)
     {
         if (capacity <= 0) throw new ArgumentOutOfRangeException(nameof(capacity));
         if (featureSize <= 0) throw new ArgumentOutOfRangeException(nameof(featureSize));
 
-        _tagSize = tagSize;
+        _idSize = idSize;
         _featureSize = featureSize;
 
-        var size = capacity * (featureSize + tagSize);
+        var size = capacity * (featureSize + idSize);
         _index = new Dictionary<T, long>(capacity);
         _memory = new ContiguousAllocator((int)Math.Min(size, MaxBlockSize));
     }
 
-    public void Add(T key, ReadOnlySpan<byte> tag, ReadOnlySpan<byte> data)
+    public void Add(T key, ReadOnlySpan<byte> id, ReadOnlySpan<byte> data)
     {
         if (_index.TryGetValue(key, out var offset))
-            Extend(offset, tag, data);
+            Extend(offset, id, data);
         else
         {
-            offset = Add(tag, data);
+            offset = Add(id, data);
             _index.Add(key, offset);
         }
     }
 
     public readonly ref struct Entry
     {
-        public readonly ReadOnlySpan<byte> Tag;
+        public readonly ReadOnlySpan<byte> Id;
         public readonly ReadOnlySpan<byte> Features;
 
-        public Entry(ReadOnlySpan<byte> tag, ReadOnlySpan<byte> features)
+        public Entry(ReadOnlySpan<byte> id, ReadOnlySpan<byte> features)
         {
-            Tag = tag;
+            Id = id;
             Features = features;
         }
     }
 
     public unsafe ref struct Iterator
     {
-        private readonly int _tagSize;
+        private readonly int _idSize;
         private readonly int _dataSize;
         private readonly Chain _chain;
         private void* _currentNodePtr;
         private int _processed;
 
-        internal Iterator(ref Chain chain, int tagSize, int dataSize)
+        internal Iterator(ref Chain chain, int idSize, int dataSize)
         {
             _chain = chain;
-            _tagSize = tagSize;
+            _idSize = idSize;
             _dataSize = dataSize;
             _processed = -1;
             fixed (void* ptr = &chain) _currentNodePtr = ptr;
@@ -88,9 +88,9 @@ public class PairFeatureAggregator<T> : IDisposable where T : notnull
         public Entry GetCurrent()
         {
             var ptr = (byte*)_currentNodePtr + sizeof(Node);
-            var tagSpan = new ReadOnlySpan<byte>(ptr, _tagSize);
-            var dataSpan = new ReadOnlySpan<byte>(ptr + _tagSize, _dataSize);
-            return new Entry(tagSpan, dataSpan);
+            var idSpan = new ReadOnlySpan<byte>(ptr, _idSize);
+            var dataSpan = new ReadOnlySpan<byte>(ptr + _idSize, _dataSize);
+            return new Entry(idSpan, dataSpan);
         }
     }
 
@@ -101,17 +101,17 @@ public class PairFeatureAggregator<T> : IDisposable where T : notnull
         foreach (var (key, offset) in _index)
         {
             ref var chain = ref GetChain(offset);
-            var iterator = new Iterator(ref chain, _tagSize, _featureSize);
+            var iterator = new Iterator(ref chain, _idSize, _featureSize);
             callback(key, chain.Count, ref iterator);
         }
     }
 
-    private unsafe void AddNode(ref Chain chain, ReadOnlySpan<byte> tag, ReadOnlySpan<byte> data)
+    private unsafe void AddNode(ref Chain chain, ReadOnlySpan<byte> id, ReadOnlySpan<byte> data)
     {
-        var ptr = _memory.Allocate(sizeof(Node) + _tagSize + _featureSize);
-        var buffer = new Span<byte>((ptr + sizeof(Node)).ToPointer(), _tagSize + _featureSize);
-        tag.CopyTo(buffer[.._tagSize]);
-        data.CopyTo(buffer.Slice(_tagSize, _featureSize));
+        var ptr = _memory.Allocate(sizeof(Node) + _idSize + _featureSize);
+        var buffer = new Span<byte>((ptr + sizeof(Node)).ToPointer(), _idSize + _featureSize);
+        id.CopyTo(buffer[.._idSize]);
+        data.CopyTo(buffer.Slice(_idSize, _featureSize));
         var offset = ptr.ToInt64();
 
         // update next property for previous element in a chain if it is not empty
@@ -128,20 +128,20 @@ public class PairFeatureAggregator<T> : IDisposable where T : notnull
         chain.Tail = offset;
     }
 
-    private unsafe long Add(ReadOnlySpan<byte> tag, ReadOnlySpan<byte> data)
+    private unsafe long Add(ReadOnlySpan<byte> id, ReadOnlySpan<byte> data)
     {
         var ptr = _memory.Allocate(sizeof(Chain));
         ref var chain = ref *(Chain*)ptr;
         chain.Count = 0;
-        AddNode(ref chain, tag, data);
+        AddNode(ref chain, id, data);
         
         return ptr.ToInt64();
     }
 
-    private void Extend(long offset, ReadOnlySpan<byte> tag, ReadOnlySpan<byte> data)
+    private void Extend(long offset, ReadOnlySpan<byte> id, ReadOnlySpan<byte> data)
     {
         ref var chain = ref GetChain(offset);
-        AddNode(ref chain, tag, data);
+        AddNode(ref chain, id, data);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
