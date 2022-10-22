@@ -53,9 +53,9 @@ public class PairFeatureContainer<TCodec, TIndex, TKey, TId> : IDisposable
                 Unsafe.Write((ptr + 1).ToPointer(), block.Count);
                 _keyIndex.Update(key, _allocator.Start.GetLongOffset(ptr));
 
-                Debug.Assert(atMostBytesRequired >= written + sizeof(int), "allocated buffer too small");
+                Debug.Assert(atMostBytesRequired >= written + HeaderSize, "allocated buffer too small");
                 // return unused memory 
-                _allocator.Return(atMostBytesRequired - (written + sizeof(int)));
+                _allocator.Return(atMostBytesRequired - (written + HeaderSize));
             }
         }
         finally
@@ -74,7 +74,7 @@ public class PairFeatureContainer<TCodec, TIndex, TKey, TId> : IDisposable
                 var size = Unsafe.Read<int>(ptr.ToPointer());
                 var count = Unsafe.Read<int>((ptr + 1).ToPointer());
                 featureBlock = new PairFeatureBlock<TId>(_tempAllocator, count, _featureCount);
-                return _codec.TryDecode(new Span<byte>((ptr + sizeof(int)).ToPointer(), size), ref featureBlock, out _);
+                return _codec.TryDecode(new Span<byte>((ptr + HeaderSize).ToPointer(), size), ref featureBlock, out _);
             }
         }
 

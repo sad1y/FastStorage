@@ -82,16 +82,14 @@ public class PairFeatureContainerTests
         {
             var offset = 0;
             fixed (void* destPtr = dest)
-            fixed (void* keysPtr = pairFeatureBlock.GetIds())
-            fixed (void* featurePtr = pairFeatureBlock.GetFeatureMatrix())
             {
-                var idSize = pairFeatureBlock.Count * sizeof(long);
-                Buffer.MemoryCopy(keysPtr, (new IntPtr(destPtr) + offset).ToPointer(), dest.Length, idSize);
-                offset += idSize;
+                var ids = new Span<long>(destPtr, pairFeatureBlock.Count);
+                pairFeatureBlock.GetIds().CopyTo(ids);
+                offset += ids.Length * sizeof(long);
 
-                var featureSize = pairFeatureBlock.GetFeatureMatrix().Length * sizeof(float);
-                Buffer.MemoryCopy(featurePtr, (new IntPtr(destPtr) + offset).ToPointer(), dest.Length, featureSize);
-                offset += featureSize;
+                var features = new Span<float>((byte*)destPtr + offset, pairFeatureBlock.GetFeatureMatrix().Length);
+                pairFeatureBlock.GetFeatureMatrix().CopyTo(features);
+                offset += features.Length * sizeof(float);
             }
 
             written = offset;
@@ -102,12 +100,11 @@ public class PairFeatureContainerTests
 
         public bool TryDecode(ReadOnlySpan<byte> src, ref PairFeatureBlock<long> pairFeatureBlock, out int read)
         {
-            const int offset = sizeof(int);
             var size = pairFeatureBlock.Count;
             var structSize = size * sizeof(long) + sizeof(float) * pairFeatureBlock.FeatureCount * size;
             unsafe
             {
-                fixed (void* ptr = src[offset..])
+                fixed (void* ptr = src)
                 {
                     var ids = new Span<long>(ptr, size);
                     pairFeatureBlock = new PairFeatureBlock<long>(Allocator, size, pairFeatureBlock.FeatureCount);
@@ -118,7 +115,7 @@ public class PairFeatureContainerTests
                 }
             }
 
-            read = offset + structSize;
+            read = structSize;
 
             return true;
         }
