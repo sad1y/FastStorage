@@ -1,13 +1,13 @@
 using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Runtime.Serialization;
 using FeatureStorage.Extensions;
 using FeatureStorage.Memory;
 
 namespace FeatureStorage;
 
 public class PairFeatureContainer<TCodec, TIndex, TKey, TId> : IDisposable
-    where TKey : unmanaged
     where TId : unmanaged
     where TCodec : IPairFeatureCodec<TId>
     where TIndex : IIndex<TKey>
@@ -50,7 +50,7 @@ public class PairFeatureContainer<TCodec, TIndex, TKey, TId> : IDisposable
                     throw new IOException("cannot encode block");
 
                 Unsafe.Write(ptr.ToPointer(), written);
-                Unsafe.Write((ptr + 1).ToPointer(), block.Count);
+                Unsafe.Write((ptr + sizeof(int)).ToPointer(), block.Count);
                 _keyIndex.Update(key, _allocator.Start.GetLongOffset(ptr));
 
                 Debug.Assert(atMostBytesRequired >= written + HeaderSize, "allocated buffer too small");
@@ -72,7 +72,7 @@ public class PairFeatureContainer<TCodec, TIndex, TKey, TId> : IDisposable
             unsafe
             {
                 var size = Unsafe.Read<int>(ptr.ToPointer());
-                var count = Unsafe.Read<int>((ptr + 1).ToPointer());
+                var count = Unsafe.Read<int>((ptr + sizeof(int)).ToPointer());
                 featureBlock = new PairFeatureBlock<TId>(_tempAllocator, count, _featureCount);
                 return _codec.TryDecode(new Span<byte>((ptr + HeaderSize).ToPointer(), size), ref featureBlock, out _);
             }
@@ -84,7 +84,7 @@ public class PairFeatureContainer<TCodec, TIndex, TKey, TId> : IDisposable
 
     private const long Magic = 0xDEADF00D;
 
-    private delegate void WriteKey(Span<byte> buffer, TKey val);
+    private const int MaxKeySize = 1024;
 
     public unsafe void Serialize(Stream stream)
     {
@@ -98,26 +98,29 @@ public class PairFeatureContainer<TCodec, TIndex, TKey, TId> : IDisposable
 
         var crc = Crc32.Append(meta);
 
-        Span<byte> keyBuffer = stackalloc byte[sizeof(TKey)];
-
-        WriteKey keyWriter = sizeof(TKey) switch
-        {
-            8 => (buffer, val) => BinaryPrimitives.WriteInt64LittleEndian(buffer, Unsafe.Read<long>(&val)),
-            4 => (buffer, val) => BinaryPrimitives.WriteInt32LittleEndian(buffer, Unsafe.Read<int>(&val)),
-            2 => (buffer, val) => BinaryPrimitives.WriteInt16LittleEndian(buffer, Unsafe.Read<short>(&val)),
-            1 => (buffer, val) => buffer[0] = Unsafe.Read<byte>(&val),
-            _ => throw new NotSupportedException()
-        };
+        Span<byte> keyBuffer = stackalloc byte[MaxKeySize];
 
         foreach (var (key, offset) in _keyIndex)
         {
             var block = _allocator.Start.MoveBy(offset);
             var size = Unsafe.Read<int>(block.ToPointer());
-            keyWriter(keyBuffer, key);
-            stream.Write(keyBuffer);
-            crc = Crc32.Append(keyBuffer, crc);
 
-            var data = new Span<byte>(block.ToPointer(), size + sizeof(int)); // + size of size value 
+            // var a = new Span<byte>(block.ToPointer(), 16);
+            // Console.WriteLine(a.ToArray());
+            
+            var keySpan = keyBuffer[sizeof(ushort)..];
+
+            if (!_keyIndex.TrySerialize(key, keySpan, out var keySize))
+                throw new IOException($"cannot write key `{key}`");
+
+            BinaryPrimitives.WriteUInt16LittleEndian(keyBuffer, (ushort)keySize);
+
+            keySpan = keyBuffer[..(keySize + sizeof(ushort))];
+
+            stream.Write(keySpan);
+            crc = Crc32.Append(keySpan, crc);
+
+            var data = new Span<byte>(block.ToPointer(), size + HeaderSize); // + size of size value 
             stream.Write(data);
             crc = Crc32.Append(data, crc);
         }
@@ -126,8 +129,6 @@ public class PairFeatureContainer<TCodec, TIndex, TKey, TId> : IDisposable
         BinaryPrimitives.WriteUInt32LittleEndian(crc32Buffer, crc);
         stream.Write(crc32Buffer);
     }
-
-    private delegate TKey ReadKey(Span<byte> buffer);
 
     public unsafe void Deserialize(Stream stream)
     {
@@ -148,52 +149,48 @@ public class PairFeatureContainer<TCodec, TIndex, TKey, TId> : IDisposable
 
         var crc = Crc32.Append(meta);
 
-        ReadKey keyReader = sizeof(TKey) switch
-        {
-            8 => (buffer) =>
-            {
-                var lVal = BinaryPrimitives.ReadInt64LittleEndian(buffer);
-                return Unsafe.Read<TKey>(&lVal);
-            },
-            4 => (buffer) =>
-            {
-                var iVal = BinaryPrimitives.ReadInt32LittleEndian(buffer);
-                return Unsafe.Read<TKey>(&iVal);
-            },
-            2 => buffer =>
-            {
-                var sVal = BinaryPrimitives.ReadInt16LittleEndian(buffer);
-                return Unsafe.Read<TKey>(&sVal);
-            },
-            1 => buffer =>
-            {
-                var bVal = buffer[0];
-                return Unsafe.Read<TKey>(&bVal);
-            },
-            _ => throw new NotSupportedException()
-        };
-
-        Span<byte> keyAndSize = stackalloc byte[sizeof(TKey) + sizeof(int)];
+        Span<byte> headerBuffer = stackalloc byte[MaxKeySize + sizeof(int)];
 
         for (var i = 0; count > i; i++)
         {
-            var read = stream.Read(keyAndSize);
-            if (read != keyAndSize.Length)
-                throw new IOException("cannot read record");
+            var headerSizeBuffer = headerBuffer[..sizeof(ushort)];
+            var read = stream.Read(headerSizeBuffer);
+            if (read != headerSizeBuffer.Length)
+                throw new IOException("cannot read record header size");
 
-            crc = Crc32.Append(keyAndSize, crc);
+            crc = Crc32.Append(headerSizeBuffer, crc);
 
-            var key = keyReader(keyAndSize);
-            var size = BinaryPrimitives.ReadInt32LittleEndian(keyAndSize[sizeof(TKey)..]);
+            var headerSize = BinaryPrimitives.ReadUInt16LittleEndian(headerSizeBuffer);
 
-            var ptr = _allocator.Allocate(size + sizeof(int));
-            var data = new Span<byte>(ptr.ToPointer(), size + sizeof(int));
+            var header = headerBuffer.Slice(sizeof(ushort), headerSize);
+            read = stream.Read(header);
+            if (read != header.Length)
+                throw new IOException("cannot read record header");
+
+            if (!_keyIndex.TryDeserialize(header, out var key, out var keySize))
+                throw new IOException($"cannot read key");
+
+            crc = Crc32.Append(header[..keySize], crc);
+
+            var bodySize = headerBuffer[..sizeof(int)];
+
+            read = stream.Read(bodySize);
+
+            if (read != bodySize.Length)
+                throw new IOException("cannot read record body size");
+
+            crc = Crc32.Append(bodySize, crc);
+
+            var size = BinaryPrimitives.ReadInt32LittleEndian(bodySize);
+
+            var ptr = _allocator.Allocate(size + HeaderSize);
+            var data = new Span<byte>(ptr.ToPointer(), size + HeaderSize);
 
             BinaryPrimitives.WriteInt32LittleEndian(data, size);
 
             data = data[sizeof(int)..]; // remove size from buffer
 
-            if (stream.Read(data) != size)
+            if (stream.Read(data) != data.Length)
                 throw new IOException("cannot copy record data");
 
             crc = Crc32.Append(data, crc);
