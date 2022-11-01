@@ -1,7 +1,6 @@
 using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using System.Runtime.Serialization;
 using FeatureStorage.Extensions;
 using FeatureStorage.Memory;
 
@@ -64,7 +63,27 @@ public class PairFeatureContainer<TCodec, TIndex, TKey, TId> : IDisposable
         }
     }
 
-    public bool TryGet(TKey key, out PairFeatureBlock<TId> featureBlock)
+    /// <summary>
+    /// Attempts to get <paramref name="pairFeatureBlock"/> by <paramref name="key"/> and deserialize it
+    /// IMPORTANT. If operation return <c>true</c> then you are responsible for returning memory by calling <c>Release</c> method on <paramref name="pairFeatureBlock"/> 
+    /// <example>
+    /// <code>
+    /// if(container.TryGet(key, allocator, out var pairFeatureBlock)) {
+    ///     try {
+    ///         ....
+    ///     }
+    ///     finally {
+    ///         pairFeatureBlock.Release();
+    ///     }
+    /// }
+    /// </code>
+    /// </example> 
+    /// </summary>
+    /// <param name="key">Object that identify <paramref name="pairFeatureBlock"/></param>
+    /// <param name="allocator">Used as temporary storage for <paramref name="pairFeatureBlock"/>. You could try <c>RecycleRegionAllocator</c></param> 
+    /// <param name="pairFeatureBlock">Reference to deserialized <c>PairFeatureBlock</c> on <paramref name="pairFeatureBlock"/></param> 
+    /// <returns>true if <paramref name="pairFeatureBlock"/> exists</returns>
+    public bool TryGet(TKey key, MemoryAllocator allocator, out PairFeatureBlock<TId> pairFeatureBlock)
     {
         if (_keyIndex.TryGetValue(key, out var offset))
         {
@@ -73,12 +92,37 @@ public class PairFeatureContainer<TCodec, TIndex, TKey, TId> : IDisposable
             {
                 var size = Unsafe.Read<int>(ptr.ToPointer());
                 var count = Unsafe.Read<int>((ptr + sizeof(int)).ToPointer());
-                featureBlock = new PairFeatureBlock<TId>(_tempAllocator, count, _featureCount);
-                return _codec.TryDecode(new Span<byte>((ptr + HeaderSize).ToPointer(), size), ref featureBlock, out _);
+                pairFeatureBlock = new PairFeatureBlock<TId>(allocator, count, _featureCount);
+                return _codec.TryDecode(new Span<byte>((ptr + HeaderSize).ToPointer(), size), ref pairFeatureBlock, out _);
             }
         }
 
-        featureBlock = new PairFeatureBlock<TId>();
+        pairFeatureBlock = new PairFeatureBlock<TId>();
+        return false;
+    }
+
+    /// <summary>
+    /// Attempts to get raw <paramref name="pairFeatureBlock"/> data by <paramref name="key"/> 
+    /// </summary>
+    /// <param name="key">Object that identify <paramref name="pairFeatureBlock"/></param>
+    /// <param name="count">Contains number of elements in that <paramref name="pairFeatureBlock"/></param>
+    /// <param name="pairFeatureBlock">Reference to raw <c>PairFeatureBlock</c> data</param> 
+    /// <returns>true if <paramref name="pairFeatureBlock"/> exists</returns>
+    public bool TryGet(TKey key, out int count, out ReadOnlySpan<byte> pairFeatureBlock)
+    {
+        if (_keyIndex.TryGetValue(key, out var offset))
+        {
+            var ptr = _allocator.Start.MoveBy(offset);
+            unsafe
+            {
+                var size = Unsafe.Read<int>(ptr.ToPointer());
+                count = Unsafe.Read<int>((ptr + sizeof(int)).ToPointer());
+                pairFeatureBlock = new ReadOnlySpan<byte>((ptr + HeaderSize).ToPointer(), size);
+            }
+        }
+
+        pairFeatureBlock = new ReadOnlySpan<byte>();
+        count = 0;
         return false;
     }
 
@@ -105,9 +149,6 @@ public class PairFeatureContainer<TCodec, TIndex, TKey, TId> : IDisposable
             var block = _allocator.Start.MoveBy(offset);
             var size = Unsafe.Read<int>(block.ToPointer());
 
-            // var a = new Span<byte>(block.ToPointer(), 16);
-            // Console.WriteLine(a.ToArray());
-            
             var keySpan = keyBuffer[sizeof(ushort)..];
 
             if (!_keyIndex.TrySerialize(key, keySpan, out var keySize))

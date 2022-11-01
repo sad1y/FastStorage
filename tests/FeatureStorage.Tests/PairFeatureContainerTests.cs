@@ -23,17 +23,21 @@ public class PairFeatureContainerTests
             builder.AddFeatures(30, new float[] { 3, 6, 9, 12, 15 });
         }, null);
 
-        storage.TryGet("1235s982013sasd0", out var block).Should().BeTrue();
+
+        using var allocator = new RecycleRegionAllocator();
+        
+        storage.TryGet("1235s982013sasd0", allocator, out var block).Should().BeTrue();
         block.Count.Should().Be(3);
         block.GetIds().ToArray().Should().BeEquivalentTo(new long[] { 10, 20, 30 });
         block.GetFeatureMatrix().ToArray().Should().BeEquivalentTo(new float[] { 1, 2, 3, 4, 5, 2, 4, 6, 8, 10, 3, 6, 9, 12, 15 });
+        
     }
 
     [Fact]
     public void TryGetShouldNotReturnBlockIfItDoesNotExists()
     {
         var storage = new PairFeatureContainer<SimpleCodec, SimpleIndex, string, long>(new SimpleCodec(), new SimpleIndex(), 5);
-        storage.TryGet("1235s982013sasd0", out _).Should().BeFalse();
+        storage.TryGet("1235s982013sasd0", null, out _).Should().BeFalse();
     }
 
     [Fact]
@@ -54,7 +58,9 @@ public class PairFeatureContainerTests
         var recoveredStorage = new PairFeatureContainer<SimpleCodec, SimpleIndex, string, long>(new SimpleCodec(), new SimpleIndex(), 5);
         recoveredStorage.Deserialize(mem);
 
-        recoveredStorage.TryGet("接受那个", out var block).Should().BeTrue();
+        using var allocator = new RecycleRegionAllocator();
+        
+        recoveredStorage.TryGet("接受那个", allocator, out var block).Should().BeTrue();
         block.Count.Should().Be(3);
         block.GetIds().ToArray().Should().BeEquivalentTo(new long[] { 10, 20, 30 });
         block.GetFeatureMatrix().ToArray().Should().BeEquivalentTo(new float[] { 1, 2, 3, 4, 5, 2, 4, 6, 8, 10, 3, 6, 9, 12, 15 });
