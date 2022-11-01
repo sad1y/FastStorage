@@ -30,7 +30,7 @@ public readonly unsafe struct PairFeatureBlock<TId> where TId : unmanaged
 
     public ReadOnlySpan<float> GetFeatureVector(int index)
     {
-        if (index <= 0 || _count <= index) throw new ArgumentOutOfRangeException(nameof(index));
+        if (index < 0 || _count <= index) throw new ArgumentOutOfRangeException(nameof(index));
 
         var offset = _ptr + sizeof(TId) * _count + index * _featureCount * sizeof(float);
 
