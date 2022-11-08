@@ -9,5 +9,9 @@ public abstract class MemoryAllocator
     /// <returns></returns>
     public abstract IntPtr Allocate(int size);
 
+    /// <summary>
+    /// free allocated memory 
+    /// </summary>
+    /// <param name="memory"></param>
     public abstract void Free(IntPtr memory);
 }

@@ -19,7 +19,7 @@ public class BPlusTree : IDisposable
     
     private uint _size;
     private IntPtr _rootPtr;
-    private readonly ContiguousAllocator _memory;
+    private readonly PinnedAllocator _memory;
 
     public BPlusTree(byte nodeCapacity = 16, uint elementCount = 1024)
     {
@@ -30,7 +30,7 @@ public class BPlusTree : IDisposable
         _nodeCapacity = nodeCapacity;
         // _allocationBlockSize = (int)(memoryBlockSize * 1.75);
 
-        _memory = new ContiguousAllocator(memoryBlockSize);
+        _memory = new PinnedAllocator(memoryBlockSize);
         // create root
         UpdateRoot(ref CreateNode(NodeFlag.Leaf));
     }

@@ -1,7 +1,9 @@
 
+using FeatureStorage.Storage;
+
 namespace FeatureStorage;
 
-public interface IIndex<TKey> : IEnumerable<KeyValuePair<TKey, long>>
+public interface IIndex<in TKey>
 {
     bool TryGetValue(TKey key, out long ptr);
 
@@ -9,6 +11,7 @@ public interface IIndex<TKey> : IEnumerable<KeyValuePair<TKey, long>>
     
     int Count { get; }
 
-    bool TrySerialize(TKey key, Span<byte> buffer, out int written);
-    bool TryDeserialize(ReadOnlySpan<byte> buffer, out TKey key, out int read);
+    void Serialize(IDirectory directory);
+    
+    void Deserialize(IDirectory directory);
 }

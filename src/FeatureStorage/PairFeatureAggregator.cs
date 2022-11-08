@@ -9,7 +9,7 @@ public class PairFeatureAggregator<T> : IDisposable where T : notnull
     private readonly int _idSize;
     private readonly int _featureSize;
     private readonly Dictionary<T, long> _index;
-    private readonly ContiguousAllocator _memory;
+    private readonly PinnedAllocator _memory;
 
     private const int MaxBlockSize = 256 * 1024 * 1024;
 
@@ -23,7 +23,7 @@ public class PairFeatureAggregator<T> : IDisposable where T : notnull
 
         var size = capacity * (featureSize + idSize);
         _index = new Dictionary<T, long>(capacity);
-        _memory = new ContiguousAllocator((int)Math.Min(size, MaxBlockSize));
+        _memory = new PinnedAllocator(Math.Min(size, MaxBlockSize));
     }
 
     public void Add(T key, ReadOnlySpan<byte> id, ReadOnlySpan<byte> data)

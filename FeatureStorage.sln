@@ -8,6 +8,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{10870B12
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FeatureStorage.Tests", "tests\FeatureStorage.Tests\FeatureStorage.Tests.csproj", "{1968213B-60B2-4EBB-983F-A33D853D9976}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{CD486F62-5983-450E-880B-5D64FD80E220}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -29,5 +31,6 @@ Global
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{1968213B-60B2-4EBB-983F-A33D853D9976} = {10870B12-DC28-4518-8E1A-1CE30D290CD0}
+		{6114A2A8-40D2-4345-8DF3-0AA8F43DD6A7} = {CD486F62-5983-450E-880B-5D64FD80E220}
 	EndGlobalSection
 EndGlobal

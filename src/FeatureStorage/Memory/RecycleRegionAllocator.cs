@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 
 namespace FeatureStorage.Memory;
 
+[Obsolete]
 public sealed class RecycleRegionAllocator : MemoryAllocator, IDisposable
 {
     private const uint MinRegionCapacity = 1024;
@@ -54,7 +55,7 @@ public sealed class RecycleRegionAllocator : MemoryAllocator, IDisposable
         for (var i = 0; i < _regions.Length; i++)
         {
             var diff = memory.ToInt64() - _regions[i].Ptr.ToInt64();
-            if (diff > 0 && _regionCapacity > diff)
+            if (diff > 0 && _regionCapacity >= diff)
                 _regions[i].Free(memory);
         }
     }

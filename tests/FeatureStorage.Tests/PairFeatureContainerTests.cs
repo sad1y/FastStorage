@@ -3,8 +3,10 @@ using System.Buffers;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using System.Text.Json;
 using System.Text.Unicode;
 using FeatureStorage.Memory;
+using FeatureStorage.Storage;
 using FluentAssertions;
 using Xunit;
 
@@ -22,7 +24,6 @@ public class PairFeatureContainerTests
             builder.AddFeatures(20, new float[] { 2, 4, 6, 8, 10 });
             builder.AddFeatures(30, new float[] { 3, 6, 9, 12, 15 });
         }, null);
-
 
         using var allocator = new RecycleRegionAllocator();
         
@@ -43,24 +44,25 @@ public class PairFeatureContainerTests
     [Fact]
     public void SerializeDeserializeShouldReturnSameData()
     {
-        var storage = new PairFeatureContainer<SimpleCodec, SimpleIndex, string, long>(new SimpleCodec(), new SimpleIndex(), 5);
-        storage.AddOrUpdate("接受那个", 3, (ref PairFeatureBlockBuilder<long> builder, object state) =>
+        const string utf8Key = "接受那个";
+        using var storage = new PairFeatureContainer<SimpleCodec, SimpleIndex, string, long>(new SimpleCodec(), new SimpleIndex(), 5);
+        
+        storage.AddOrUpdate(utf8Key, 3, (ref PairFeatureBlockBuilder<long> builder, object? _) =>
         {
             builder.AddFeatures(10, new float[] { 1, 2, 3, 4, 5 });
             builder.AddFeatures(20, new float[] { 2, 4, 6, 8, 10 });
             builder.AddFeatures(30, new float[] { 3, 6, 9, 12, 15 });
         }, null);
 
-        using var mem = new MemoryStream();
-        storage.Serialize(mem);
-        mem.Position = 0;
+        var root = new RamDirectory("/");
+        storage.Serialize(root);
 
-        var recoveredStorage = new PairFeatureContainer<SimpleCodec, SimpleIndex, string, long>(new SimpleCodec(), new SimpleIndex(), 5);
-        recoveredStorage.Deserialize(mem);
+        using var recoveredStorage = new PairFeatureContainer<SimpleCodec, SimpleIndex, string, long>(new SimpleCodec(), new SimpleIndex(), 5);
+        recoveredStorage.Deserialize(root);
 
         using var allocator = new RecycleRegionAllocator();
-        
-        recoveredStorage.TryGet("接受那个", allocator, out var block).Should().BeTrue();
+
+        recoveredStorage.TryGet(utf8Key, allocator, out var block).Should().BeTrue();
         block.Count.Should().Be(3);
         block.GetIds().ToArray().Should().BeEquivalentTo(new long[] { 10, 20, 30 });
         block.GetFeatureMatrix().ToArray().Should().BeEquivalentTo(new float[] { 1, 2, 3, 4, 5, 2, 4, 6, 8, 10, 3, 6, 9, 12, 15 });
@@ -68,10 +70,7 @@ public class PairFeatureContainerTests
 
     private class SimpleIndex : IIndex<string>
     {
-        private readonly Dictionary<string, long> _index = new();
-        public IEnumerator<KeyValuePair<string, long>> GetEnumerator() => _index.GetEnumerator();
-
-        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+        private Dictionary<string, long> _index = new();
 
         public bool TryGetValue(string key, out long ptr) => _index.TryGetValue(key, out ptr);
 
@@ -82,18 +81,24 @@ public class PairFeatureContainerTests
 
         public int Count => _index.Count;
 
-        public bool TrySerialize(string key, Span<byte> buffer, out int written)
+        private const string FileName = "index";
+        
+        public void Serialize(IDirectory directory)
         {
-            var status = Utf8.FromUtf16(key, buffer, out _, out written) == OperationStatus.Done;
-            return status;
+            var file = directory.CreateFile(FileName);
+            using var stream = file.OpenWrite();
+
+            JsonSerializer.Serialize(stream, _index);
+            
+            stream.Flush();
         }
 
-        public bool TryDeserialize(ReadOnlySpan<byte> buffer, out string key, out int read)
+        public void Deserialize(IDirectory directory)
         {
-            Span<char> keyBuffer = stackalloc char[buffer.Length];
-            var status = Utf8.ToUtf16(buffer, keyBuffer, out read, out var written);
-            key = new string(keyBuffer[..written]);
-            return status == OperationStatus.Done;
+            var file = directory.GetFile(FileName);
+            using var stream = file.OpenRead();
+            
+            _index = JsonSerializer.Deserialize<Dictionary<string, long>>(stream)!;
         }
     }
 

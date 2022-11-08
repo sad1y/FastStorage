@@ -1,6 +1,6 @@
 namespace FeatureStorage;
 
-internal class Crc32
+internal static class Crc32
 {
     private const uint Poly = 0xedb88320u;
 
