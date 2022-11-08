@@ -1,5 +1,6 @@
 namespace FeatureStorage.Memory;
 
+[Obsolete("Move to ArrayPool")]
 public abstract class MemoryAllocator
 {
     /// <summary>

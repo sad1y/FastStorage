@@ -3,7 +3,6 @@ using System.Runtime.InteropServices;
 
 namespace FeatureStorage.Memory;
 
-[Obsolete]
 public sealed class RecycleRegionAllocator : MemoryAllocator, IDisposable
 {
     private const uint MinRegionCapacity = 1024;
