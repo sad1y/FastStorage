@@ -1,5 +1,8 @@
 namespace FeatureStorage.Storage;
 
+/// <summary>
+/// for test purpose only
+/// </summary>
 public class RamDirectory : IDirectory
 {
     private readonly RamDirectory? _parent;
