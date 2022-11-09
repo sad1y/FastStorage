@@ -142,7 +142,7 @@ public class PairFeatureContainer<TCodec, TIndex, TKey, TId> : IDisposable
         containerStream.Write(meta);
 
         Span<byte> crcBuffer = stackalloc byte[sizeof(int)];
-        var crc = Crc32.Append(meta);
+        var crc = meta.Crc32();
         BinaryPrimitives.WriteUInt32LittleEndian(crcBuffer, crc);
         containerStream.Write(crcBuffer);
         containerStream.Flush();
@@ -169,7 +169,7 @@ public class PairFeatureContainer<TCodec, TIndex, TKey, TId> : IDisposable
             throw new IOException(
                 "Codec settings are different from what they were when data was serialized, it may leads to data corruption.");
 
-        var crc = Crc32.Append(meta);
+        var crc = meta.Crc32();
 
         Span<byte> crcBuffer = stackalloc byte[sizeof(uint)];
         if (metaStream.Read(crcBuffer) != crcBuffer.Length)

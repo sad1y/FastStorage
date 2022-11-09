@@ -27,7 +27,7 @@ public class LocalDirectory : IDirectory
     public IFile? GetFile(string name)
     {
         var path = Path.Combine(_path, name);
-        return File.Exists(path) ? new LocalFile(_path) : null;
+        return File.Exists(path) ? new LocalFile(path) : null;
     }
 
     public ValueTask<IFile> CreateFile(string name, CancellationToken token) => new(CreateFile(name));
@@ -56,5 +56,21 @@ public class LocalDirectory : IDirectory
         return new LocalDirectory(path);
     }
 
-    public IEnumerable<IResource> Children { get; }
+    public IEnumerable<IDirectory> GetDirectories()
+    {
+        return Directory
+            .EnumerateDirectories(_path)
+            .Select(f => new LocalDirectory(Path.Combine(_path, f)));
+    }
+
+    public ValueTask<IEnumerable<IDirectory>> GetDirectories(CancellationToken token) => new(GetDirectories());
+
+    public IEnumerable<IFile> GetFiles()
+    {
+        return Directory
+            .EnumerateFiles(_path)
+            .Select(f => new LocalFile(Path.Combine(_path, f)));
+    }
+
+    public ValueTask<IEnumerable<IFile>> GetFiles(CancellationToken token) => new(GetFiles());
 }

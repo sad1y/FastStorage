@@ -28,6 +28,17 @@ public class PinnedAllocatorTests
 
         actual.Should().Be(expected);
     }
+    
+    [Fact]
+    public void Allocation_ShouldBeAbleToCreateNewBlock()
+    {
+        const int blockSize = 32; 
+        using var allocator = new PinnedAllocator(blockSize);
+        for (var i = 0; i < 10; i++)
+        {
+            allocator.Allocate(blockSize).Ptr.Should().NotBe(IntPtr.Zero);
+        }
+    }
 
 #if !DEBUG
     [Fact]

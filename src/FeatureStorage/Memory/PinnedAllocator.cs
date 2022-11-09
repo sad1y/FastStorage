@@ -57,6 +57,8 @@ public class PinnedAllocator : IDisposable
             {
                 if (!_blocks[_currentBlock].CanAllocate(size))
                 {
+                    if(_blocks.Length - 1 == _currentBlock)
+                        break;
                     AllocateNewMemBlock(Math.Max(_blockCapacity, size));
                     continue;
                 }
@@ -116,7 +118,7 @@ public class PinnedAllocator : IDisposable
         var metaFile = directory.CreateFile(SerializeMetaFileName);
         BinaryPrimitives.WriteInt32LittleEndian(buffer, allocator._blockCapacity);
 
-        var crc = Crc32.Append(buffer[..sizeof(int)]);
+        var crc = buffer[..sizeof(int)].Crc32();
         BinaryPrimitives.WriteUInt32LittleEndian(buffer[sizeof(int)..], crc);
         using var metaStream = metaFile.OpenWrite();
         metaStream.Write(buffer);
@@ -138,7 +140,7 @@ public class PinnedAllocator : IDisposable
                 var blob = new ReadOnlySpan<byte>(block.Ptr.ToPointer(), block.Size);
                 stream.Write(blob);
 
-                crc = Crc32.Append(blob);
+                crc = blob.Crc32();
                 var crcSpan = buffer[sizeof(uint)..];
                 BinaryPrimitives.WriteUInt32LittleEndian(crcSpan, crc);
                 stream.Write(crcSpan);
@@ -150,13 +152,13 @@ public class PinnedAllocator : IDisposable
 
     public static PinnedAllocator Deserialize(IDirectory directory)
     {
-        var children = directory.Children.ToList();
-        var blocks = new MemBlock[children.Count];
+        var files = directory.GetFiles().ToList();
+        var blocks = new MemBlock[files.Count];
 
-        var metaResource = children.FirstOrDefault(f => f.Name == SerializeMetaFileName);
+        var metaFile = files.FirstOrDefault(f => f.Name == SerializeMetaFileName);
 
-        if (metaResource is not IFile metaFile)
-            throw new IOException("Cannot file metafile");
+        if (metaFile is null)
+            throw new IOException("Cannot find meta file");
 
         Span<byte> buffer = stackalloc byte[sizeof(int) + sizeof(uint)];
 
@@ -168,21 +170,19 @@ public class PinnedAllocator : IDisposable
         var blockSize = BinaryPrimitives.ReadInt32LittleEndian(buffer);
         var crc = BinaryPrimitives.ReadUInt32LittleEndian(buffer[sizeof(int)..]);
 
-        if (crc != Crc32.Append(buffer[..sizeof(int)]))
+        if (crc != buffer[..sizeof(int)].Crc32())
             throw new IOException("Corrupted meta file");
 
-        for (var i = 0; i < children.Count; i++)
+        for (var i = 0; i < files.Count; i++)
         {
-            if (children[i].Name == SerializeMetaFileName)
+            if (files[i].Name == SerializeMetaFileName)
                 continue;
 
-            if (children[i] is not IFile file)
-                throw new InvalidCastException(
-                    $"Directory `{directory.Name}` should only contains a file, but `{children[i].Name}` is not a File");
-
-            var suffix = children[i].Name.AsSpan(
+            var file = files[i];
+            
+            var suffix = files[i].Name.AsSpan(
                 SerializeBlockPrefix.Length,
-                children[i].Name.Length - (SerializeBlockExt.Length + SerializeBlockPrefix.Length));
+                files[i].Name.Length - (SerializeBlockExt.Length + SerializeBlockPrefix.Length));
 
             if (!int.TryParse(suffix, out var index))
                 throw new InvalidCastException($"Cannot parse file `{file.Name}` suffix");
@@ -213,7 +213,7 @@ public class PinnedAllocator : IDisposable
                 if (stream.Read(buffer[..sizeof(int)]) != sizeof(int))
                     throw new IOException($"Cannot read crc32 from stream. File: `{file.Name}`");
 
-                if (Crc32.Append(span) != BinaryPrimitives.ReadUInt32LittleEndian(buffer[..sizeof(int)]))
+                if (span.Crc32() != BinaryPrimitives.ReadUInt32LittleEndian(buffer[..sizeof(int)]))
                     throw new IOException($"Invalid crc32. File: `{file.Name}`");
 
                 blocks[index] = new MemBlock(ptr, size);
