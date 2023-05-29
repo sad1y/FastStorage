@@ -9,8 +9,8 @@
         <TargetFramework>netstandard2.1</TargetFramework>
         <Authors>zoth</Authors>
         <Company>home-brew</Company>
-        <Version>0.0.2</Version>
-        <PackageVersion>0.0.3</PackageVersion>
+        <Version>0.0.5</Version>
+        <PackageVersion>0.0.5</PackageVersion>
     </PropertyGroup>
 
     <ItemGroup>
