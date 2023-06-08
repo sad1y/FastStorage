@@ -1,18 +1,16 @@
 ﻿using System;
-using System.Collections.Generic;
 using BenchmarkDotNet.Attributes;
-using FeatureStorage;
 
 namespace FeatureStorage.Benchmark
 {
     [DisassemblyDiagnoser(printSource: true)]
     [RyuJitX64Job]
-    public class SpanComparation
+    public class SpanComparision
     {
         private readonly byte[] _a = new byte[16];
         private readonly byte[] _b = new byte[16];
 
-        public SpanComparation()
+        public SpanComparision()
         {
             var rng = new Random();
             var n = _a.Length;
