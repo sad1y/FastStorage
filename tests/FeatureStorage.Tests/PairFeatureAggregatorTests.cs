@@ -1,4 +1,6 @@
 using System;
+using System.Buffers.Binary;
+using System.Collections.Generic;
 using FluentAssertions;
 using Xunit;
 
@@ -6,74 +8,95 @@ namespace FeatureStorage.Tests;
 
 public class PairFeatureAggregatorTests
 {
+    private class DummyFeatureCodec : IFeatureCodec
+    {
+        public bool TryEncode(ReadOnlySpan<float> features, Span<byte> dest, out int written)
+        {
+            for (var i = 0; i < features.Length; i++)
+            {
+                BinaryPrimitives.WriteSingleLittleEndian(dest[(i * sizeof(float))..], features[i]);
+            }
+
+            written = features.Length * sizeof(float);
+            return true;
+        }
+
+        public bool TryDecode(ReadOnlySpan<byte> src, Span<float> features, out int read)
+        {
+            for (var i = 0; i < features.Length; i++)
+            {
+                features[i] = BinaryPrimitives.ReadSingleLittleEndian(src[(i * sizeof(float))..]);
+            }
+
+            read = src.Length;
+            return true;
+        }
+    }
+
     [Fact]
     public void Add_ShouldConnectDataByKey()
     {
-        const int featureSize = 64;
-        const int idSize = 4;
-        var aggregator = new PairFeatureAggregator<string>(10, idSize, featureSize);
+        const int featureCount = 64;
+        const int sampleDataCount = 16;
 
-        var features = new byte[7][];
-        var ids = new byte[7][];
-        var rng = new Random();
+        using var aggregator = new PairFeatureAggregator<ulong, long, DummyFeatureCodec>(10, featureCount, 100, new());
 
-        for (var i = 0; features.Length > i; i++)
+        var features = new float[sampleDataCount][];
+        var ids = new long[sampleDataCount];
+        var keys = new ulong[sampleDataCount];
+
+        for (var i = 0; sampleDataCount > i; i++)
         {
-            ids[i] = new byte[idSize];
-            features[i] = new byte[featureSize];
-            rng.NextBytes(features[i]);
-            rng.NextBytes(ids[i]);
+            keys[i] = (ulong)Random.Shared.Next(1, 4);
+            ids[i] = Random.Shared.Next(1000, 2000000);
+            features[i] = new float[featureCount];
+
+            for (var j = 0; j < featureCount; j++)
+                features[i][j] = Random.Shared.NextSingle();
         }
 
-        aggregator.Add("window", ids[0], features[0]);
-        aggregator.Add("summer", ids[1], features[1]);
-        aggregator.Add("window", ids[2], features[2]);
-        aggregator.Add("street", ids[3], features[3]);
-        aggregator.Add("window", ids[4], features[4]);
-        aggregator.Add("street", ids[5], features[5]);
-        aggregator.Add("window", ids[6], features[6]);
-
-        void CheckData(ref PairFeatureAggregator<string>.Iterator iterator, int[] expectedIndices)
+        for (var i = 0; sampleDataCount > i; i++)
         {
-            var processed = 0;
-            while (iterator.MoveNext())
-            {
-                var index = expectedIndices[processed];
-                var id = ids[index];
-                var feature = features[index];
-
-                var entry = iterator.GetCurrent();
-                entry.Id.ToArray().Should().BeEquivalentTo(id);
-                entry.Features.ToArray().Should().BeEquivalentTo(feature);
-                processed++;
-            }
-
-            expectedIndices.Length.Should().Be(processed);
+            aggregator.TryAdd(keys[i], ids[i], features[i]).Should().BeTrue();    
         }
 
-        aggregator.Iterate((string key, int count, ref PairFeatureAggregator<string>.Iterator iterator) =>
+        using var container = aggregator.BuildContainer(new SimpleCodec(), new SimpleIndex<ulong>());
+
+        var uniqueKeys = new Dictionary<ulong, List<int>>();
+
+        for (var i = 0; keys.Length > i; i++)
         {
-            switch (key)
+            if (!uniqueKeys.TryGetValue(keys[i], out var indices))
             {
-                case "window":
-                {
-                    count.Should().Be(4);
-                    CheckData(ref iterator, new[] { 0, 2, 4, 6 });
-                    break;
-                }
-                case "summer":
-                {
-                    count.Should().Be(1);
-                    CheckData(ref iterator, new[] { 1 });
-                    break;
-                }
-                case "street":
-                {
-                    count.Should().Be(2);
-                    CheckData(ref iterator, new[] { 3, 5 });
-                    break;
-                }
+                indices = new List<int>();
+                uniqueKeys.Add(keys[i], indices);
             }
-        });
+            
+            indices.Add(i);
+        }
+
+        // assert
+        foreach (var (key, indices) in uniqueKeys)
+        {
+            container.TryGet(key, out var block).Should().BeTrue();
+
+            // check ids span
+            var blockIds = block.GetIds();
+            blockIds.Length.Should().Be(indices.Count);
+            
+            for (var i = 0; indices.Count > i; i++)
+                blockIds[i].Should().Be(ids[indices[i]]);
+
+            // check matrix
+            var matrix = block.GetFeatureMatrix();
+
+            for (var i = 0; indices.Count > i; i++)
+            {
+                var featureSlice = matrix.Slice(i * featureCount, featureCount);
+                featureSlice.SequenceEqual(features[indices[i]]);
+            }
+            
+            block.Release();
+        }
     }
 }

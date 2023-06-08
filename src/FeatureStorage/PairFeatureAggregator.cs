@@ -1,67 +1,134 @@
+using System.Buffers;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using FeatureStorage.Memory;
 
 namespace FeatureStorage;
 
-public class PairFeatureAggregator<T> : IDisposable where T : notnull
+public class PairFeatureAggregator<TKey, TId, TFeatureCodec> : IDisposable
+    where TKey : unmanaged
+    where TId : unmanaged
+    where TFeatureCodec : IFeatureCodec
 {
-    private readonly int _idSize;
-    private readonly int _featureSize;
-    private readonly Dictionary<T, long> _index;
+    private readonly int _featureCount;
+    private readonly int _maxBlockSize;
+    private readonly TFeatureCodec _codec;
+    private readonly Dictionary<TKey, long> _index;
     private readonly ContiguousAllocator _memory;
 
     private const int MaxBlockSize = 256 * 1024 * 1024;
 
-    public PairFeatureAggregator(int capacity, int idSize, int featureSize)
+    public unsafe PairFeatureAggregator(int capacity, int featureCount, int maxBlockSize, TFeatureCodec codec)
     {
         if (capacity <= 0) throw new ArgumentOutOfRangeException(nameof(capacity));
-        if (featureSize <= 0) throw new ArgumentOutOfRangeException(nameof(featureSize));
+        if (featureCount <= 0) throw new ArgumentOutOfRangeException(nameof(featureCount));
+        if (maxBlockSize <= 0) throw new ArgumentOutOfRangeException(nameof(maxBlockSize));
 
-        _idSize = idSize;
-        _featureSize = featureSize;
+        _featureCount = featureCount;
+        _maxBlockSize = maxBlockSize;
+        _codec = codec;
 
-        var size = capacity * (featureSize + idSize);
-        _index = new Dictionary<T, long>(capacity);
-        _memory = new ContiguousAllocator((int)Math.Min(size, MaxBlockSize));
+        var size = capacity * (featureCount * sizeof(float) + sizeof(TKey));
+        _index = new Dictionary<TKey, long>(capacity);
+        _memory = new ContiguousAllocator(Math.Min(size, MaxBlockSize));
     }
 
-    public void Add(T key, ReadOnlySpan<byte> id, ReadOnlySpan<byte> data)
+    public bool TryAdd(TKey key, TId id, ReadOnlySpan<float> features)
     {
         if (_index.TryGetValue(key, out var offset))
-            Extend(offset, id, data);
+        {
+            ref var chain = ref GetChain(offset);
+            if (chain.Count >= _maxBlockSize)
+                return false;
+            
+            AddNode(ref chain, id, features);
+        }
         else
         {
-            offset = Add(id, data);
+            offset = Add(id, features);
             _index.Add(key, offset);
         }
+
+        return true;
     }
 
-    public readonly ref struct Entry
+    public PairFeatureContainer<TCodec, TIndex, TKey, TId> BuildContainer<TCodec, TIndex>
+        (TCodec codec, TIndex index, int blockSize = 16 * 1024 * 1024)
+        where TCodec : IPairFeatureCodec<TId>
+        where TIndex : IIndex<TKey>
     {
-        public readonly ReadOnlySpan<byte> Id;
+        var container = new PairFeatureContainer<TCodec, TIndex, TKey, TId>(codec, index, _featureCount, blockSize);
+        var ids = ArrayPool<TId>.Shared.Rent(_maxBlockSize);
+        var featureMatrix = ArrayPool<float>.Shared.Rent(_maxBlockSize * _featureCount);
+
+        try
+        {
+            foreach (var (key, offset) in _index)
+            {
+                ref var chain = ref GetChain(offset);
+                var iterator = new Iterator(ref chain);
+
+                var count = 0;
+                while (iterator.MoveNext())
+                {
+                    var entry = iterator.GetCurrent();
+                    ids[count] = entry.Id;
+                    
+                    var vec = featureMatrix.AsSpan(_featureCount * count, _featureCount);
+                    if (!_codec.TryDecode(entry.Features, vec, out _))
+                        throw new FormatException("Cannot decode feature matrix");
+
+                    count++;
+                }
+                
+                Debug.Assert(count == chain.Count);
+
+                container.AddOrUpdate(key, chain.Count,
+                    static (ref PairFeatureBlockBuilder<TId> builder,
+                        (TId[] ids, float[] matrix, int size, int featureCount) state) =>
+                    {
+                        for (var i = 0; state.size > i; i++)
+                        {
+                            builder.AddFeatures(
+                                state.ids[i],
+                                state.matrix.AsSpan(i * state.featureCount, state.featureCount)
+                            );
+                        }
+                    },
+                    (ids, featureMatrix, chain.Count, _featureCount));
+            }
+        }
+        finally
+        {
+            ArrayPool<TId>.Shared.Return(ids);
+            ArrayPool<float>.Shared.Return(featureMatrix);
+        }
+
+        return container;
+    }
+
+    private readonly ref struct Entry
+    {
+        public readonly TId Id;
         public readonly ReadOnlySpan<byte> Features;
 
-        public Entry(ReadOnlySpan<byte> id, ReadOnlySpan<byte> features)
+        public Entry(TId id, ReadOnlySpan<byte> features)
         {
             Id = id;
             Features = features;
         }
     }
 
-    public unsafe ref struct Iterator
+    private unsafe ref struct Iterator
     {
-        private readonly int _idSize;
-        private readonly int _dataSize;
         private readonly Chain _chain;
         private void* _currentNodePtr;
         private int _processed;
 
-        internal Iterator(ref Chain chain, int idSize, int dataSize)
+        internal Iterator(ref Chain chain)
         {
             _chain = chain;
-            _idSize = idSize;
-            _dataSize = dataSize;
             _processed = -1;
             fixed (void* ptr = &chain) _currentNodePtr = ptr;
         }
@@ -88,60 +155,74 @@ public class PairFeatureAggregator<T> : IDisposable where T : notnull
         public Entry GetCurrent()
         {
             var ptr = (byte*)_currentNodePtr + sizeof(Node);
-            var idSpan = new ReadOnlySpan<byte>(ptr, _idSize);
-            var dataSpan = new ReadOnlySpan<byte>(ptr + _idSize, _dataSize);
-            return new Entry(idSpan, dataSpan);
+            var offset = 0;
+            var id = Unsafe.Read<TId>(ptr + offset);
+            offset += sizeof(TId);
+            var size = Unsafe.Read<int>(ptr + offset);
+            offset += sizeof(int);
+            var dataSpan = new ReadOnlySpan<byte>(ptr + offset, size);
+            return new Entry(id, dataSpan);
         }
     }
 
-    public delegate void IterateCallback(T key, int elementCount, ref Iterator iterator);
+    // public delegate void IterateCallback(TKey key, int elementCount, ref Iterator iterator);
 
-    public void Iterate(IterateCallback callback)
+    // public void Iterate(IterateCallback callback)
+    // {
+    //     foreach (var (key, offset) in _index)
+    //     {
+    //         ref var chain = ref GetChain(offset);
+    //         var iterator = new Iterator(ref chain, _idSize, _featureSize);
+    //         callback(key, chain.Count, ref iterator);
+    //     }
+    // }
+
+    private unsafe void AddNode(ref Chain chain, TId id, ReadOnlySpan<float> features)
     {
-        foreach (var (key, offset) in _index)
-        {
-            ref var chain = ref GetChain(offset);
-            var iterator = new Iterator(ref chain, _idSize, _featureSize);
-            callback(key, chain.Count, ref iterator);
-        }
-    }
+        var bufferSize = sizeof(float) * features.Length;
+        Span<byte> buffer = stackalloc byte[bufferSize];
 
-    private unsafe void AddNode(ref Chain chain, ReadOnlySpan<byte> id, ReadOnlySpan<byte> data)
-    {
-        var ptr = _memory.Allocate(sizeof(Node) + _idSize + _featureSize);
-        var buffer = new Span<byte>((ptr + sizeof(Node)).ToPointer(), _idSize + _featureSize);
-        id.CopyTo(buffer[.._idSize]);
-        data.CopyTo(buffer.Slice(_idSize, _featureSize));
-        var offset = ptr.ToInt64();
+        if (!_codec.TryEncode(features, buffer, out var written))
+            throw new FormatException("Cannot encode features");
 
-        // update next property for previous element in a chain if it is not empty
-        if (chain.Count != 0)
-        {
-            ref var latest = ref GetChainNode(chain.Tail);
-            latest.Next = offset;
-        }
-
-        ref var node = ref *(Node*)ptr;
+        var data = buffer[..written];
         
-        node.Next = 0;
-        chain.Count += 1;
-        chain.Tail = offset;
+        var entrySize = sizeof(TId) + data.Length + sizeof(int);
+        var ptr = _memory.Allocate(sizeof(Node) + entrySize);
+        {
+            var offset = sizeof(Node);
+            Unsafe.Write((ptr + offset).ToPointer(), id);
+            offset += sizeof(TId);
+            Unsafe.Write((ptr + offset).ToPointer(), data.Length);
+            offset += sizeof(int);
+            data.CopyTo(new Span<byte>((ptr + offset).ToPointer(), data.Length));
+        }
+        {
+            var offset = ptr.ToInt64();
+
+            // update next property for previous element in a chain if it is not empty
+            if (chain.Count != 0)
+            {
+                ref var latest = ref GetChainNode(chain.Tail);
+                latest.Next = offset;
+            }
+
+            ref var node = ref *(Node*)ptr;
+
+            node.Next = 0;
+            chain.Count += 1;
+            chain.Tail = offset;
+        }
     }
 
-    private unsafe long Add(ReadOnlySpan<byte> id, ReadOnlySpan<byte> data)
+    private unsafe long Add(TId id, ReadOnlySpan<float> data)
     {
         var ptr = _memory.Allocate(sizeof(Chain));
         ref var chain = ref *(Chain*)ptr;
         chain.Count = 0;
         AddNode(ref chain, id, data);
-        
-        return ptr.ToInt64();
-    }
 
-    private void Extend(long offset, ReadOnlySpan<byte> id, ReadOnlySpan<byte> data)
-    {
-        ref var chain = ref GetChain(offset);
-        AddNode(ref chain, id, data);
+        return ptr.ToInt64();
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -157,7 +238,7 @@ public class PairFeatureAggregator<T> : IDisposable where T : notnull
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    internal struct Chain
+    private struct Chain
     {
         public long Tail;
         public ushort Count;
