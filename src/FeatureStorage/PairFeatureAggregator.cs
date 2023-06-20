@@ -18,6 +18,14 @@ public class PairFeatureAggregator<TKey, TId, TFeatureCodec> : IDisposable
 
     private const int MaxBlockSize = 256 * 1024 * 1024;
 
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <param name="capacity">Aproximate unique keys count</param>
+    /// <param name="featureCount">Features count in entry</param>
+    /// <param name="maxBlockSize">Maximum entries per block</param>
+    /// <param name="codec"></param>
+    /// <exception cref="ArgumentOutOfRangeException"></exception>
     public unsafe PairFeatureAggregator(int capacity, int featureCount, int maxBlockSize, TFeatureCodec codec)
     {
         if (capacity <= 0) throw new ArgumentOutOfRangeException(nameof(capacity));
@@ -52,56 +60,36 @@ public class PairFeatureAggregator<TKey, TId, TFeatureCodec> : IDisposable
         return true;
     }
 
-    public PairFeatureContainer<TCodec, TIndex, TKey, TId> BuildContainer<TCodec, TIndex>
+    public PairFeatureContainer<TCodec, TIndex, TKey, TId> Build<TCodec, TIndex>
         (TCodec codec, TIndex index, int blockSize = 16 * 1024 * 1024)
         where TCodec : IPairFeatureCodec<TId>
         where TIndex : IIndex<TKey>
     {
         var container = new PairFeatureContainer<TCodec, TIndex, TKey, TId>(codec, index, _featureCount, blockSize);
-        var ids = ArrayPool<TId>.Shared.Rent(_maxBlockSize);
-        var featureMatrix = ArrayPool<float>.Shared.Rent(_maxBlockSize * _featureCount);
 
-        try
+        foreach (var (key, offset) in _index)
         {
-            foreach (var (key, offset) in _index)
-            {
-                ref var chain = ref GetChain(offset);
-                var iterator = new Iterator(ref chain);
+            ref var chain = ref GetChain(offset);
 
-                var count = 0;
-                while (iterator.MoveNext())
+            container.AddOrUpdate(key, chain.Count,
+                static (ref PairFeatureBlockBuilder<TId> builder,
+                    (long offset, TFeatureCodec codec, int featureCount) state) =>
                 {
-                    var entry = iterator.GetCurrent();
-                    ids[count] = entry.Id;
-                    
-                    var vec = featureMatrix.AsSpan(_featureCount * count, _featureCount);
-                    if (!_codec.TryDecode(entry.Features, vec, out _))
-                        throw new FormatException("Cannot decode feature matrix");
+                    ref var chain = ref GetChain(state.offset);
+                    var iterator = new Iterator(ref chain);
 
-                    count++;
-                }
-                
-                Debug.Assert(count == chain.Count);
-
-                container.AddOrUpdate(key, chain.Count,
-                    static (ref PairFeatureBlockBuilder<TId> builder,
-                        (TId[] ids, float[] matrix, int size, int featureCount) state) =>
+                    Span<float> features = stackalloc float[state.featureCount];
+                    while (iterator.MoveNext())
                     {
-                        for (var i = 0; state.size > i; i++)
-                        {
-                            builder.AddFeatures(
-                                state.ids[i],
-                                state.matrix.AsSpan(i * state.featureCount, state.featureCount)
-                            );
-                        }
-                    },
-                    (ids, featureMatrix, chain.Count, _featureCount));
-            }
-        }
-        finally
-        {
-            ArrayPool<TId>.Shared.Return(ids);
-            ArrayPool<float>.Shared.Return(featureMatrix);
+                        var entry = iterator.GetCurrent();
+
+                        if (!state.codec.TryDecode(entry.Features, features, out _))
+                            throw new FormatException("Cannot decode feature matrix");
+
+                        builder.AddFeatures(entry.Id, features);
+                    }
+                },
+                (offset, _codec, _featureCount));
         }
 
         return container;

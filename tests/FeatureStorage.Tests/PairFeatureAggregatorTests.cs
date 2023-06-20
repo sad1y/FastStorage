@@ -61,7 +61,7 @@ public class PairFeatureAggregatorTests
             aggregator.TryAdd(keys[i], ids[i], features[i]).Should().BeTrue();    
         }
 
-        using var container = aggregator.BuildContainer(new SimpleCodec(), new SimpleIndex());
+        using var container = aggregator.Build(new SimpleCodec(), new SimpleIndex());
 
         var uniqueKeys = new Dictionary<string, List<int>>();
 

@@ -12,6 +12,8 @@ public class LocalDirectory : IDirectory
         _path = path;
     }
 
+    public string FullPath => _path;
+    
     public string Name => Path.GetDirectoryName(_path)!;
 
     public ValueTask Delete(CancellationToken token)
