@@ -1,12 +1,12 @@
-namespace FeatureStorage;
+namespace FeatureStorage.Extensions;
 
-internal class Crc32
+public static class Crc32Extension
 {
     private const uint Poly = 0xedb88320u;
 
     private static readonly uint[] Table = new uint[16 * 256];
 
-    static Crc32()
+    static Crc32Extension()
     {
         for (uint i = 0; i < 256; i++)
         {
@@ -19,7 +19,13 @@ internal class Crc32
         }
     }
     
-    public static uint Append(ReadOnlySpan<byte> input, uint crc = 0)
+    public static uint Crc32(this byte[] input, uint crc = 0) => ComputeCrc32Internal(input, crc);
+
+    public static uint Crc32(this Span<byte> input, uint crc = 0) => ComputeCrc32Internal(input, crc);
+
+    public static uint Crc32(this ReadOnlySpan<byte> input, uint crc = 0) => ComputeCrc32Internal(input, crc);
+
+    private static uint ComputeCrc32Internal(ReadOnlySpan<byte> input, uint crc = 0)
     {
         var crcLocal = uint.MaxValue ^ crc;
 

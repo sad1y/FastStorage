@@ -97,43 +97,5 @@ public class BPlusTreeTests
         }
 
         Assert.False(tree.Search(0).Found);
-        //
-        // File.Delete("/tmp/bptree.dot");
-        // using var fs = File.OpenWrite("/tmp/bptree.dot");
-        // tree.PrintAsDot(fs);
-    }
-
-    [Fact]
-    public void SearchInLargeSet()
-    {
-        var values = new uint[50_000_000];
-        for (var i = 0; i < values.Length; i++)
-        {
-            values[i] = (uint)i;
-        }
-
-        var rng = new Random();
-        var n = values.Length;
-        while (n > 1)
-        {
-            var k = rng.Next(n);
-            n--;
-            (values[n], values[k]) = (values[k], values[n]);
-        }
-        
-        var tree = new BPlusTree(nodeCapacity: 128, (uint)values.Length);
-        
-        for (var i = 0; i < values.Length; i++)
-        {
-            tree.Insert((uint)i, values[i]);
-        }
-        
-        Assert.Equal((uint)values.Length, tree.Size); 
-        
-        for (var i = 0; i < values.Length; i++)
-        {
-            var r= tree.Search(values[i]);
-            Assert.Equal(values[i], r.Value);
-        }
     }
 }

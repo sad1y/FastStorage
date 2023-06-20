@@ -26,13 +26,13 @@ public struct PairFeatureBlockBuilder<T> where T : unmanaged
         _block = new PairFeatureBlock<T>(memory, capacity, featureCount);
     }
 
-    public void AddFeatures(T tag, ReadOnlySpan<float> values)
+    public void AddFeatures(T id, ReadOnlySpan<float> values)
     {
         Debug.Assert(values.Length == _block.FeatureCount);
-        if (_block.Size == _count)
+        if (_block.Count == _count)
             throw new IOException("capacity exceeded");
 
-        _block.Insert(_count++, tag, values);
+        _block.Insert(_count++, id, values);
     }
 
     public PairFeatureBlock<T> ToBlock()

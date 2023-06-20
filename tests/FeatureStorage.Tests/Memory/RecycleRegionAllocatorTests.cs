@@ -1,7 +1,8 @@
+using System;
 using FeatureStorage.Memory;
 using Xunit;
 
-namespace FeatureStorage.Tests;
+namespace FeatureStorage.Tests.Memory;
 
 public class RecycleRegionAllocatorTests
 {
@@ -20,7 +21,7 @@ public class RecycleRegionAllocatorTests
     [Fact]
     public void AllocateAndFree_ShouldReuseMemoryRegion()
     {
-        using var allocator = new RecycleRegionAllocator(1024);
+        using var allocator = new RecycleRegionAllocator();
 
         var ptr1 = allocator.Allocate(1000);
         allocator.Allocate(100); // should allocate new region
@@ -32,6 +33,11 @@ public class RecycleRegionAllocatorTests
         Assert.Equal(ptr1, ptr2);
     }
     
-    
-    // should not affect anything if someone trying to free ptr that is not belongs to allocator
+    [Fact]
+    public void Free_PtrWhichDoesntBelongsToAllocator()
+    {
+        using var allocator = new RecycleRegionAllocator();
+
+        allocator.Free(IntPtr.Zero);
+    }
 }

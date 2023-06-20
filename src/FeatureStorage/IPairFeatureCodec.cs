@@ -11,7 +11,7 @@ public interface IPairFeatureCodec<T> where T : unmanaged
     int Stamp { get; }
     
     /// <summary>
-    /// should return overhead size when data has been compressed  
+    /// should return overhead size
     /// </summary>
     int MetaSize { get; }
 }
