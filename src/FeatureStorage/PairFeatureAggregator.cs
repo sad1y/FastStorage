@@ -21,7 +21,7 @@ public class PairFeatureAggregator<TKey, TId, TFeatureCodec> : IDisposable
     /// <summary>
     /// 
     /// </summary>
-    /// <param name="capacity">Aproximate unique keys count</param>
+    /// <param name="capacity">Approximate unique keys count</param>
     /// <param name="featureCount">Features count in entry</param>
     /// <param name="maxBlockSize">Maximum entries per block</param>
     /// <param name="codec"></param>
@@ -71,6 +71,9 @@ public class PairFeatureAggregator<TKey, TId, TFeatureCodec> : IDisposable
         {
             ref var chain = ref GetChain(offset);
 
+            if (chain.Count == 0)
+                throw new FeatureStorageException($"key: `{key}` has no data in chain");
+            
             container.AddOrUpdate(key, chain.Count,
                 static (ref PairFeatureBlockBuilder<TId> builder,
                     (long offset, TFeatureCodec codec, int featureCount) state) =>
