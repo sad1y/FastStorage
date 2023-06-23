@@ -1,5 +1,3 @@
-using System.Buffers;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using FeatureStorage.Memory;
@@ -48,12 +46,12 @@ public class PairFeatureAggregator<TKey, TId, TFeatureCodec> : IDisposable
             ref var chain = ref GetChain(offset);
             if (chain.Count >= _maxBlockSize)
                 return false;
-            
+
             AddNode(ref chain, id, features);
         }
         else
         {
-            offset = Add(id, features);
+            offset = CreateNewChain(id, features);
             _index.Add(key, offset);
         }
 
@@ -120,7 +118,7 @@ public class PairFeatureAggregator<TKey, TId, TFeatureCodec> : IDisposable
         {
             _chain = chain;
             _processed = -1;
-            fixed (void* ptr = &chain) _currentNodePtr = ptr;
+            _currentNodePtr = IntPtr.Zero.ToPointer();
         }
 
         public bool MoveNext()
@@ -130,7 +128,7 @@ public class PairFeatureAggregator<TKey, TId, TFeatureCodec> : IDisposable
 
             if (_processed == -1)
             {
-                _currentNodePtr = (Node*)((byte*)_currentNodePtr + sizeof(Chain));
+                _currentNodePtr = new IntPtr(_chain.Head).ToPointer();
             }
             else
             {
@@ -160,11 +158,11 @@ public class PairFeatureAggregator<TKey, TId, TFeatureCodec> : IDisposable
         var bufferSize = sizeof(float) * features.Length;
         Span<byte> buffer = stackalloc byte[bufferSize];
 
-        if (!_codec.TryEncode(features, buffer, out var written))
-            throw new FormatException("Cannot encode features");
+        if (!_codec.TryEncode(features, buffer, out var written) || written == 0)
+            throw new FormatException($"Cannot encode features. Buffer size: {features.Length}, Written: {written}");
 
         var data = buffer[..written];
-        
+
         var entrySize = sizeof(TId) + data.Length + sizeof(int);
         var ptr = _memory.Allocate(sizeof(Node) + entrySize);
         {
@@ -193,12 +191,13 @@ public class PairFeatureAggregator<TKey, TId, TFeatureCodec> : IDisposable
         }
     }
 
-    private unsafe long Add(TId id, ReadOnlySpan<float> data)
+    private unsafe long CreateNewChain(TId id, ReadOnlySpan<float> data)
     {
         var ptr = _memory.Allocate(sizeof(Chain));
         ref var chain = ref *(Chain*)ptr;
         chain.Count = 0;
         AddNode(ref chain, id, data);
+        chain.Head = chain.Tail;
 
         return ptr.ToInt64();
     }
@@ -219,6 +218,7 @@ public class PairFeatureAggregator<TKey, TId, TFeatureCodec> : IDisposable
     private struct Chain
     {
         public long Tail;
+        public long Head;
         public ushort Count;
     }
 
